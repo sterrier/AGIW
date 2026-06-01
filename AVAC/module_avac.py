@@ -1,15 +1,181 @@
 # AVAC module version 1.4
-import os
-from os.path import expanduser
-import numpy as np
-import tarfile, re, subprocess, sys, yaml, shutil
-from linecache import getline
-from clawpack.geoclaw import topotools as topo
-import geopandas as gp
-from pathlib import Path
-
 # Last update: 4 May 2026
 # C. Ancey
+# Adapted Stéphane Terrier May-June 2026
+
+from    clawpack.geoclaw    import topotools as topo  # type: ignore
+import  geopandas as gp
+from    linecache           import getline
+import  numpy as np
+import  os
+from    os.path             import expanduser
+from    pathlib             import Path
+import  re
+import  shutil
+import  subprocess
+import  sys
+import  tarfile
+import  yaml
+
+
+########
+# AVAC #
+########
+
+def avac_get_version_from_file(file_path):
+    """Extract the version from a file if it exists in the working directory."""
+    # Regular expression to extract filename & version number
+    pattern = r"[#!]\s*([\w\.]+).*?version\s*=\s*([\d\.]+)"
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            first_line = f.readline().strip()
+            match = re.search(pattern, first_line)
+            if match:
+                return match.group(1), float(match.group(2))  # Return (filename, version)
+    except Exception:
+        pass  # Ignore errors
+    return None, None
+
+def avac_install(**kwargs):
+    """ 
+    This function extracts the files required by AVAC
+    options:
+    - verbosity = False by default, makes the execution verbose or not
+    - path = '.' by default (working directory). If a new path is specified
+      and does not exist, it is created
+    - archive = 'files.tar.gz' by default
+    """
+    path = kwargs.get('path', '.')
+     
+    if not isinstance(path, str): 
+        print(f"Error. Check your path definition! You set path = {path}.")
+    else:
+        if os.path.isdir(path):
+            print(f"Installation of AVAC in the working directory: {os.getcwd()}")
+        else:
+            print(f"Installation of AVAC in the new directory {os.getcwd()+'/'+path}")
+            os.makedirs(path)
+    
+    archive = kwargs.get('archive', 'files.tar.gz')
+    verbosity = kwargs.get('verbosity', False)
+      
+    #extract_path = '.'  # Extract to current directory
+    if not os.path.isfile(archive): 
+        print(f"Installation impossible. Archive {archive} is missing.")
+        print(f"Stopped...")
+    else:
+        # Regular expression to extract filename & version number
+        pattern = r"[#!]\s*([\w\.]+).*?version\s*=\s*([\d\.]+)"
+
+        # Open the tar.gz archive
+        with tarfile.open(archive, "r:gz") as tar:
+            file_names = tar.getnames()
+
+            for target_file in file_names:
+                extracted_file = tar.extractfile(target_file)
+
+                if extracted_file:  # Ignore directories
+                    # Read first line separately to extract version
+                    first_line = extracted_file.readline().decode().strip()
+                    match = re.search(pattern, first_line)
+
+                    if match:
+                        filename = match.group(1)  # Extract filename
+                        archive_version = float(match.group(2))  # Extract version
+                        file_path = os.path.join(path, filename)
+
+                        # Read the remaining content after the first line
+                        remaining_content = extracted_file.read()
+
+                        # Check if file exists in the working directory
+                        if os.path.exists(file_path):
+                            _, existing_version = avac_get_version_from_file(file_path)
+                            
+                            # Update file?
+                            if existing_version is None or existing_version < archive_version:
+                                if verbosity:
+                                    print(f"Updating {filename} (Old: {existing_version}, New: {archive_version})")
+                                with open(file_path, "wb") as f_out:
+                                    f_out.write((first_line + "\n").encode())  # Restore first line
+                                    f_out.write(remaining_content)  # Write the rest
+                            else:
+                                if verbosity:
+                                    print(f"Skipping {filename}, version {existing_version} is up to date.")
+                        else:
+                            # Extract file
+                            if verbosity: print(f"Extracting new file: {filename}")
+                            with open(file_path, "wb") as f_out:
+                                f_out.write((first_line + "\n").encode())  # Restore first line
+                                f_out.write(remaining_content)  # Write the rest
+    print(f"=> You are using AVAC version {avac_get_version_from_file('Makefile')[1]}.")
+
+def avac_reload(folder=None):
+    """
+    Reloads the module module_avac in a robust way... so if changes are made in this file, it is possible to reload the module.
+
+    Input:
+        * folder : str, optional. Path to the folder containing the module
+
+    Output:
+        * module or None. The reloaded module or None in case of error
+
+    """
+    import importlib
+    import os
+
+    # Chemin explicite
+    if folder is None:
+        module_dir = os.getcwd()
+    else:
+        module_dir = folder
+    
+    module_path = os.path.join(module_dir, 'module_avac.py')
+    
+    # Vérification de l'existence du fichier
+    if not os.path.exists(module_path):
+        print(f"Error: {module_path} does not exist...")
+        return None
+    
+    try:
+        # Add folder to system path
+        if module_dir not in sys.path:
+            sys.path.insert(0, module_dir)
+        
+        # Méthode 1: if module has not been imported
+        if 'module_avac' not in sys.modules:
+            spec = util.spec_from_file_location("module_avac", module_path)
+            module = util.module_from_spec(spec)
+            sys.modules["module_avac"] = module
+            spec.loader.exec_module(module)
+            print("Module imported for the first time.")
+        
+        # Méthode 2: if module exists, reload it
+        else:
+            # Supprimer complètement le module du cache
+            if 'module_avac' in sys.modules:
+                del sys.modules['module_avac']
+            
+            # Nettoyer aussi les sous-modules si ils existent
+            modules_to_remove = [name for name in sys.modules.keys() if name.startswith('module_avac.')]
+            for module_name in modules_to_remove:
+                del sys.modules[module_name]
+            
+            # Reimporter complètement
+            spec = importlib.util.spec_from_file_location("module_avac", module_path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["module_avac"] = module
+            spec.loader.exec_module(module)
+            print("Module reloaded successfully.")
+        
+        # Mettre à jour les globals() du notebook
+        globals()['module_avac'] = sys.modules['module_avac']
+        
+        return sys.modules['module_avac']
+        
+    except Exception as e:
+        print(f"ERROR when loading the module: {e}")
+        return None
+
 
 #####################
 # various functions #
@@ -48,7 +214,7 @@ def format_numbers(features):
     return formatted_features
 
 ############
-# clawpack #
+# Clawpack #
 ############
 
 # check if clawpack is installed
@@ -98,96 +264,6 @@ def check_version(claw):
                 if len(parts) == 2:   
                     minor_value = int(parts[1].strip())  #  
     return [major_value,minor_value]
-
-
-def get_version_from_file(file_path):
-    """Extract the version from a file if it exists in the working directory."""
-    # Regular expression to extract filename & version number
-    pattern = r"[#!]\s*([\w\.]+).*?version\s*=\s*([\d\.]+)"
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            first_line = f.readline().strip()
-            match = re.search(pattern, first_line)
-            if match:
-                return match.group(1), float(match.group(2))  # Return (filename, version)
-    except Exception:
-        pass  # Ignore errors
-    return None, None
-
-
-def install_avac(**kwargs):
-    """ 
-    This function extracts the files required by AVAC
-    options:
-    - verbosity = False by default, makes the execution verbose or not
-    - path = '.' by default (working directory). If a new path is specified
-      and does not exist, it is created
-    - archive = 'files.tar.gz' by default
-    """
-    path = kwargs.get('path', '.')
-     
-    if not isinstance(path,str): 
-        print(f"Error. Check your path definition! You set path = {path}.")
-    else:
-        if os.path.isdir(path):
-            print(f"Installation of AVAC in the working directory: {os.getcwd()}")
-        else:
-            print(f"Installation of AVAC in the new directory {os.getcwd()+'/'+path}")
-            os.makedirs(path)
-    
-    archive = kwargs.get('archive', 'files.tar.gz')
-    verbosity = kwargs.get('verbosity', False)
-      
-    #extract_path = '.'  # Extract to current directory
-    if not os.path.isfile(archive): 
-        print(f"Installation impossible. Archive {archive} is missing.")
-        print(f"Stopped...")
-    else:
-        # Regular expression to extract filename & version number
-        pattern = r"[#!]\s*([\w\.]+).*?version\s*=\s*([\d\.]+)"
-
-        # Open the tar.gz archive
-        with tarfile.open(archive, "r:gz") as tar:
-            file_names = tar.getnames()
-
-            for target_file in file_names:
-                extracted_file = tar.extractfile(target_file)
-
-                if extracted_file:  # Ignore directories                    
-                    # Read first line separately to extract version
-                    first_line = extracted_file.readline().decode().strip()
-                    match = re.search(pattern, first_line)
-
-                    if match:
-                        filename = match.group(1)  # Extract filename
-                        archive_version = float(match.group(2))  # Extract version
-                        file_path = os.path.join(path, filename)
-
-                        # Read the remaining content after the first line
-                        remaining_content = extracted_file.read()
-
-                        # Check if file exists in the working directory
-                        if os.path.exists(file_path):
-                            _, existing_version = get_version_from_file(file_path)
-                            
-                            if existing_version is None or existing_version < archive_version:
-                                if verbosity:
-                                    print(f"Updating {filename} (Old: {existing_version}, New: {archive_version})")
-                                with open(file_path, "wb") as f_out:
-                                    f_out.write((first_line + "\n").encode())  # Restore first line
-                                    f_out.write(remaining_content)  # Write the rest
-                            else:
-                                if verbosity:
-                                    print(f"Skipping {filename}, version {existing_version} is up to date.")
-                        else:
-                            if verbosity: print(f"Extracting new file: {filename}")
-                            with open(file_path, "wb") as f_out:
-                                f_out.write((first_line + "\n").encode())  # Restore first line
-                                f_out.write(remaining_content)  # Write the rest
-    print(f"=> You are using AVAC version {get_version_from_file('Makefile')[1]}.")
-
-# running AVAC
-
 
 def make_output(avac_p, verbosity=False):
     """
@@ -543,8 +619,6 @@ def correctingFactor1(s,theta,nu):
        return (np.sin(theta_rad)-nu*np.cos(theta_rad))/(np.sin(q)-nu*np.cos(q))
     else:
        return 0
-
-
 
 def correctingFactor2(z,zref,gradient_hypso):
     """
@@ -1137,7 +1211,7 @@ def export_claw_initiation_file(topo_file,zi,filename='init.xyz'):
     init.write(filename,topo_type=1)
     print(f'* maximum initial depth of starting zone  = {np.max(zi[:,:])} m')    
 
-def test_keys(dictionary_tested,dictionary_ref):
+def test_keys(dictionary_tested,dictionary_ref) -> int:
     """ 
     checks whether all the keys are defined in the loaded dictionary 
     """
@@ -1155,6 +1229,7 @@ def test_keys(dictionary_tested,dictionary_ref):
             print(f"There is additional information. This information will not be used here.")
             for info in difference_2: print(f"* Additional key: {info}")
             return 0
+        return 0
     else:
         return 0
 
@@ -1203,7 +1278,7 @@ def import_configuration_files(file_name):
     def is_genuine_int(var):
         return isinstance(var, int) and not isinstance(var, bool)    
 
-    def is_integer(key_1,key_2):
+    def is_integer(key_1,key_2) -> int:
         """check whether avac_parameters[key_1][key_2] is integer"""
         var = avac_parameters[key_1][key_2]
         if not is_genuine_int(var):
@@ -1212,7 +1287,7 @@ def import_configuration_files(file_name):
         else:
             return 0
 
-    def is_boolean(key_1,key_2):
+    def is_boolean(key_1,key_2) -> int:
         """checks whether avac_parameters[key_1][key_2] is boolean"""
         var = avac_parameters[key_1][key_2]
         if not isinstance(var, bool):
@@ -1500,73 +1575,6 @@ def import_polylines(file='profil.shp',Language = 'English'):
         print(text5[Language])
     return ligne, coords_array
 
-def reload_avac(dossier=None):
-    """
-    Reloads the module module_avac in a robust way... so if changes are made in this file, it is possible to reload the module.
-
-    Input:
-        * folder : str, optional. Path to the folder containing the module
-
-    Output:
-        * module or None. The reloaded module or None in case of error
-
-    """
-    import importlib
-    import os
-    # Chemin explicite
-    if dossier is None:
-        module_dir = os.getcwd()
-    else:
-        module_dir = dossier
-    
-    module_path = os.path.join(module_dir, 'module_avac.py')
-    
-    # Vérification de l'existence du fichier
-    if not os.path.exists(module_path):
-        print(f"Error: {module_path} does not exist...")
-        return None
-    
-    try:
-        # Add folder to system path
-        if module_dir not in sys.path:
-            sys.path.insert(0, module_dir)
-        
-        # Méthode 1: if module has not been imported
-        if 'module_avac' not in sys.modules:
-            spec = importlib.util.spec_from_file_location("module_avac", module_path)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules["module_avac"] = module
-            spec.loader.exec_module(module)
-            print("Module imported for the first time.")
-        
-        # Méthode 2: if module exists, reload it
-        else:
-            # Supprimer complètement le module du cache
-            if 'module_avac' in sys.modules:
-                del sys.modules['module_avac']
-            
-            # Nettoyer aussi les sous-modules si ils existent
-            modules_to_remove = [name for name in sys.modules.keys() 
-                               if name.startswith('module_avac.')]
-            for module_name in modules_to_remove:
-                del sys.modules[module_name]
-            
-            # Reimporter complètement
-            spec = importlib.util.spec_from_file_location("module_avac", module_path)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules["module_avac"] = module
-            spec.loader.exec_module(module)
-            print("Module reloaded successfully.")
-        
-        # Mettre à jour les globals() du notebook
-        globals()['module_avac'] = sys.modules['module_avac']
-        
-        return sys.modules['module_avac']
-        
-    except Exception as e:
-        print(f"ERROR when loading the module: {e}")
-        return None
-    
 def export_profile(file,distances,elevations,header=False):
     # export of the profile
     with open(file, 'w') as f:
