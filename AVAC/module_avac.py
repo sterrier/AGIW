@@ -1,4 +1,4 @@
-# AVAC module version 1.3
+# AVAC module version 1.4
 import os
 from os.path import expanduser
 import numpy as np
@@ -8,7 +8,7 @@ from clawpack.geoclaw import topotools as topo
 import geopandas as gp
 from pathlib import Path
 
-# Last update: 12 April 2026
+# Last update: 4 May 2026
 # C. Ancey
 
 #####################
@@ -958,20 +958,21 @@ def export_claw_dem_window(topo_file, window, name_file='topography_window.asc')
                     nbx_out, nby_out, Z_window, name_file)
 
 def plot_topo(topo_file, ax=None, figsize_width=10, contour_interval=25,
-              azdeg=315, altdeg=45, step = 200,ylabel_position="left"):
+              azdeg=315, altdeg=45, step = 200,ylabel_position="left",resampling=None):
     """
     Draws the topographic background (hillshade + contour lines) on a matplotlib axis.
 
     If ax is None, create a new figure with dimensions suitable for the raster. The axis ticks should align with multiples of 100 m (absolute coordinates).
 
     Input:
-        * topo_file        : object returned by reading_raster_file
+        * topo_file        : object returned by reading_raster_file (Digital Elevation Model, DEM)
         * ax               : existing matplotlib axis (optional; if None, a figure is created)
         * figsize_width    : width of the figure in inches if ax=None (default is 10)
         * contour_interval : contour line spacing in meters (default is 25)
         * azdeg, altdeg    : azimuth and elevation of the light source for the hillshade
         * step             : step between labels, default is 200 m
         * ylabel_position  : position of the y-labels
+        * resampling       : integer or None. If an integer is given, the DEM is resampled with a step = resampling
 
     Output:
         * fig, ax, x0, y0  (where x0, y0: southwest corner of the raster in absolute coordinates)
@@ -1011,7 +1012,10 @@ def plot_topo(topo_file, ax=None, figsize_width=10, contour_interval=25,
     ls = mcolors.LightSource(azdeg=azdeg, altdeg=altdeg)
     cell_size = float(x_rel[1] - x_rel[0])
     hs = ls.hillshade(Z, vert_exag=2, dx=cell_size, dy=cell_size)
-    ax.pcolormesh(XX, YY, hs, cmap="gray", shading="auto", alpha=0.8)
+    if resampling is None:
+        ax.pcolormesh(XX, YY, hs, cmap="gray", shading="auto", alpha=0.8)
+    else:
+        ax.pcolormesh(XX[::resampling,::resampling], YY[::resampling,::resampling], hs[::resampling,::resampling], cmap="gray", shading="auto", alpha=0.8)
 
     # --- courbes de niveau ---
     zmin_c = int(np.nanmin(Z) // contour_interval) * contour_interval
@@ -1021,7 +1025,7 @@ def plot_topo(topo_file, ax=None, figsize_width=10, contour_interval=25,
 
     ax.contour(XX, YY, Z, levels=levels_minor, colors="k", linewidths=0.4, alpha=0.5)
     cs = ax.contour(XX, YY, Z, levels=levels_major, colors="k", linewidths=0.9, alpha=0.8)
-    ax.clabel(cs, fmt="%d m", fontsize=7, inline=True)
+    ax.clabel(cs, fmt="%d m", fontsize=8, inline=True)
 
     ax.set_aspect("equal")
 
@@ -1573,3 +1577,37 @@ def export_profile(file,distances,elevations,header=False):
 def format_m(x, decimals=1):
     """espace fine insécable"""
     return f"{x:_.{decimals}f}".replace("_", "\u202f")   
+
+def rename_output_directory(config, current_directory, Change_output_directory_name=False, Overwrite_directory=False):
+    """
+    Rename output directory from '_output' to the name in the output dictionary (if existing).
+    Input:
+        * config: the configuration dictionary
+        * current_directory: Path object
+        * Change_output_directory_name: boolean (False by default) 
+        * Overwrite_directory: boolean (False by default
+    """
+    from pathlib import Path
+    output = config['output']
+    if Change_output_directory_name:
+        print("Changing the name of the output directory")
+        if 'output_directory' in output:
+            output_dir_target = current_directory / output['output_directory']
+            output_dir        = current_directory / '_output'
+            if output['output_directory'] != '_output':
+                if output_dir.exists():
+                    if output_dir_target.exists():
+                        print(f"Directory {output_dir_target} already existing")
+                        if Overwrite_directory:
+                            import shutil
+                            print("I will erase it")
+                            shutil.rmtree(output_dir_target)
+                            output_dir.rename(output_dir_target)
+                        else:
+                            print("Nothing to be done. I keep the existing directory.")
+                else:
+                    print("Error: the directory '_output' is missing!")
+            else:
+                print(f"Ckeck the output dictionary. As output['output_directory'] is '_output, no change is neeed.")
+    else:
+        print("The output directory name is '_output'")

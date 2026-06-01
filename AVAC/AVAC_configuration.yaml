@@ -2,7 +2,7 @@ animation:
   animation_directory: "/home/ancey/Lac_Clusaz/Figures/Vid\xE9os"
   label_step: 500
   making_html: false
-  n_out: 120
+  n_out: 150
   variable: depth
 computation:
   boundary: extrap
@@ -16,10 +16,10 @@ computation:
   mass_frac_stop: 0.01
   mass_threshold_velocity: 0.01
   max_iter: 100000
-  nb_simul: 120
+  nb_simul: 150
   output_directory: _output
   refinement: 1
-  t_max: 120
+  t_max: 150
   topo_dir: /home/ancey/Lac_Clusaz/Topo
   track_mass: true
 dem_extent:
@@ -46,6 +46,7 @@ gauges:
 output:
   Language: French
   delta_t: 1
+  output_directory: _output100
   output_format: binary32
   verbosity: 0
 refinement:
@@ -56,17 +57,17 @@ refinement:
 release:
   correction_elevation: true
   correction_slope: true
-  d0: 1.75
+  d0: 1.6
   gradient_hypso: 0.03
   nu: 0.2
-  period_return: 300
+  period_return: 100
   theta_cr: 30
   z_ref: 1300
 rheology:
   C: 0
   beta: 0.0
   model: Voellmy
-  mu: 0.225
-  rho: 1000
+  mu: 0.25
+  rho: 300
   u_cr: 0
-  xi: 1200
+  xi: 1100

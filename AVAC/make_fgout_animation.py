@@ -54,7 +54,7 @@ with open(projdir / "AVAC_configuration.yaml") as file:
 
 # Directory to which animation is exported
 animation_dir = Path(Movie['animation_directory'])
-
+topo_dir      = Path(Files['topo_directory'])
 #######################
 # variable definition #
 #######################
@@ -62,7 +62,7 @@ animation_dir = Path(Movie['animation_directory'])
 fgno       = 1  
 
 # variable definition
-outdir     = '_output'
+outdir     = OUT['output_directory'] #'_output'
 out_format = OUT['output_format']
 variable   = Movie['variable']
 
@@ -135,7 +135,7 @@ cell_size = (-fgout1.X[0]+fgout1.X[1])[0]
 xmin = fgout1.X.min()
 ymin = fgout1.Y.min()
 
-topo_file = reading_raster_file(Files['topofile'])
+topo_file = reading_raster_file(topo_dir / Files['topofile'])
 step = Movie['label_step']
 fig, axes, x0, y0 = plot_topo(topo_file,step=step)
 

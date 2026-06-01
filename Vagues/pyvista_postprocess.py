@@ -33,10 +33,14 @@ def animation(outdir    = "_output",
     if out_video is not None:
         if isinstance(out_video,str):
             video_dir = current_directory.parent / 'Figures' / out_video
+            # si out_video n'est pas une chaîne de caractères, on utilise le dossier par défaut
         else:
             video_dir = current_directory.parent / 'Figures' / "Vidéos"
-        video_dir.mkdir(parents=True, exist_ok=True)
-        print(f"I use {video_dir} for saving the video (if any)")
+    else:
+        # si out_video = None, alors on utilise le dossier par défaut
+        video_dir = current_directory.parent / 'Figures' / "Vidéos"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    print(f"I use {video_dir} for saving the video (if any)")
     if keep_images:
         animation_dir = current_directory.parent / 'Figures' / "Animation" / "Lake"
         print(f"I use {animation_dir} for keeping the exported images (if any)")
@@ -173,8 +177,7 @@ def animation(outdir    = "_output",
         import subprocess
         import tempfile
         fname = file_name or "animation.mp4"
-        if out_video is not None:
-            fname = str(video_dir / fname)
+        fname = str(video_dir / fname)
         s = state["i"]
         print(f"Enregistrement de {fname} (frame {s} → fin)...")
         with tempfile.TemporaryDirectory() as tmpdir:

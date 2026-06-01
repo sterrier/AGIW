@@ -6,9 +6,8 @@ module waves_utilities
 
     real(kind=8), allocatable :: q_avac(:,:,:,:)
     real(kind=8), allocatable :: times(:)
-    real(kind=8) :: damping, overhang
+    real(kind=8) :: damping
     real(kind=8) :: lake_alt
-    character(len=4) :: avid
     character(len=255) :: inflow_mode, BC_dir
     type(fgout_grid) :: AVAC_fgrid
 
@@ -20,20 +19,18 @@ contains
         INTEGER :: i, unit=2
 
         call opendatafile(unit, "setprob.data")
-            !READ(unit,*) avid
             READ(unit,*) inflow_mode
             READ(unit,*) damping
             READ(unit,*) lake_alt
             READ(unit,*) BC_dir
-            !READ(unit,*) overhang
         CLOSE(unit)
 
         IF (TRIM(inflow_mode) == "None") then
             inflow_mode = "bc"
         END IF
-        IF (TRIM(avid) == "None") then
-            avid = ""
-        END IF
+!        IF (TRIM(avid) == "None") then
+!            avid = ""
+!        END IF
 
     END SUBROUTINE read_data
 
@@ -355,7 +352,8 @@ contains
         CHARACTER(len=255) :: file, ftemp
         INTEGER :: i
 
-        ftemp = "../../AVAC/_output" // trim(avid) // "/"
+        !ftemp = "../../AVAC/_output" // trim(avid) // "/"
+        ftemp = "../../AVAC/_output"  // "/"
         call set_fgout(.false., 4, TRIM(ftemp) // "fgout_grids.data")
 
         AVAC_fgrid = FGOUT_fgrids(1)
@@ -393,17 +391,19 @@ contains
     END SUBROUTINE init_src_fgout_bin
 
 
-    SUBROUTINE read_fgout_ascii(it, avid, q)
+    !SUBROUTINE read_fgout_ascii(it, avid, q)
+    SUBROUTINE read_fgout_ascii(it, q)
 
         REAL(KIND=8), ALLOCATABLE, INTENT(INOUT) :: q(:,:,:)
         INTEGER, INTENT(IN) :: it
-        CHARACTER(LEN=4), INTENT(IN) :: avid
+        !CHARACTER(LEN=4), INTENT(IN) :: avid
         CHARACTER(LEN=255), PARAMETER :: ftemp = "_output"
         REAL(KIND=8) :: h, hu, hv, B, xlow, ylow, dx, dy
         CHARACTER(len=255) :: file
         INTEGER :: mx, my, i, j, unit
 
-        write(file,"(A,I0.4)") TRIM(ftemp)//TRIM(avid)//"/fgout0001.q", it
+        !write(file,"(A,I0.4)") TRIM(ftemp)//TRIM(avid)//"/fgout0001.q", it
+        write(file,"(A,I0.4)") TRIM(ftemp)//"/fgout0001.q", it
         print "(A,A)", "Reading file ", TRIM(file)
         OPEN(unit,FILE=TRIM(file),STATUS="old")
             DO i = 1, 2

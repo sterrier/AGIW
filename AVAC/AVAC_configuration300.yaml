@@ -2,7 +2,7 @@ animation:
   animation_directory: "/home/ancey/Lac_Clusaz/Figures/Vid\xE9os"
   label_step: 500
   making_html: false
-  n_out: 150
+  n_out: 120
   variable: depth
 computation:
   boundary: extrap
@@ -16,42 +16,59 @@ computation:
   mass_frac_stop: 0.01
   mass_threshold_velocity: 0.01
   max_iter: 100000
-  nb_simul: 150
+  nb_simul: 120
   output_directory: _output
   refinement: 1
-  t_max: 150
+  t_max: 120
   topo_dir: /home/ancey/Lac_Clusaz/Topo
   track_mass: true
-date:
-  date: 2026-05-06 07:54:30.752122
-objects:
-  line: profil.shp
+dem_extent:
+  cell_size: 2.0
+  nbx: 1500
+  nby: 1000
+  nodata_value: -9999
+  xmax: 967998.20001221
+  xmin: 965000.20001221
+  ymax: 6536998.08996582
+  ymin: 6535000.08996582
+file_names:
+  initiation_file: init.xyz
+  topo_source: real_world
+  topofile: topography.asc
+  type_dem: 3
+  type_init: 1
+  topo_directory: /home/ancey/Lac_Clusaz/Topo
+gauges:
+  gauge_recording: true
+  gauges:
+  - - 1
+    - 965780.0
+    - 6536190.0
 output:
   Language: French
   delta_t: 1
-  output_directory: _output100
+  output_directory: _output300
   output_format: binary32
   verbosity: 0
+refinement:
+  delta_t: null
+  fine_dict: None
+  finer_dem: None
+  topo_refinement: false
 release:
   correction_elevation: true
   correction_slope: true
-  d0: 1.6
+  d0: 1.75
   gradient_hypso: 0.03
   nu: 0.2
-  period_return: 100
+  period_return: 300
   theta_cr: 30
   z_ref: 1300
 rheology:
   C: 0
   beta: 0.0
   model: Voellmy
-  mu: 0.25
+  mu: 0.225
   rho: 300
   u_cr: 0
-  xi: 1100
-topography:
-  dem: topo2m_c.asc
-  finer_dem: topo1m_simple.asc
-  starting_areas: ZA.shp
-  topo_refinement: false
-  topo_source: real_world
+  xi: 1200

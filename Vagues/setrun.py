@@ -87,11 +87,9 @@ def setrun(claw_pkg='geoclaw'):
 
     clawdata.lower[0] = lake['xmin']
     clawdata.upper[0] = lake['xmax']
-
     clawdata.lower[1] = lake['ymin']
     clawdata.upper[1] = lake['ymax'] 
 	 
-
     # Number of grid cells: Coarsest grid
     clawdata.num_cells[0] = int((lake['xmax']-lake['xmin'])/computation['cell_size'])
     clawdata.num_cells[1] = int((lake['ymax']-lake['ymin'])/computation['cell_size'])
@@ -136,8 +134,8 @@ def setrun(claw_pkg='geoclaw'):
     if clawdata.output_style==1:
         # Output nout frames at equally spaced times up to tfinal:
         clawdata.num_output_times = computation['nb_simul']
-        clawdata.tfinal           = computation['t_max']+computation['t_0']
-        clawdata.output_t0 = True  # output at initial (or restart) time?
+        clawdata.tfinal           = computation['t_max'] #+computation['t_0']
+        clawdata.output_t0        = True  # output at initial (or restart) time?
 
     elif clawdata.output_style == 2:
         # Specify a list of output times.
@@ -355,8 +353,8 @@ def setrun(claw_pkg='geoclaw'):
     fgout.y1 = lake['ymin'] #+ dx_fine/2
     fgout.y2 = lake['ymax'] #- dx_fine/2.
     fgout.tstart = computation['t_0']
-    fgout.tend   = computation['t_max']
-    fgout.nout   = computation['nb_simul'] 
+    fgout.tend   = computation['t_max']  
+    fgout.nout   = computation['nb_simul']+1
     fgout_grids.append(fgout)    # written to fgout_grids.data
 
     ################
@@ -401,8 +399,9 @@ def setgeo(rundata):
     geo_data.sea_level           = lake["water_level"]
     geo_data.dry_tolerance       = computation['dry_limit']
     geo_data.friction_forcing    = rheology['friction']
-    geo_data.manning_coefficient = 1/rheology['Strickler']
+    geo_data.manning_coefficient = 1/np.array(rheology['Strickler'])
     geo_data.friction_depth      = rheology['friction_depth_limit']
+    geo_data.manning_break      = [rheology['friction_break_elevation']]
 
     # Refinement settings
     refinement_data = rundata.refinement_data
