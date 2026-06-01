@@ -1,0 +1,62 @@
+computation:
+  boundary: user
+  cell_size: 0.5
+  cfl_max: 1
+  cfl_target: 0.5
+  damping: 0.3
+  dry_limit: 0.0001
+  force_stop: false
+  initial_mass: false
+  limiter: mc
+  mass_frac_stop: 0.01
+  mass_threshold_velocity: 0.01
+  max_iter: 100000
+  mode: bc
+  nb_simul: 180
+  output_directory: _output
+  refinement: 1
+  t_0: 30
+  t_max: 120
+  track_mass: true
+date:
+  date: 2026-04-25 16:41:20.949937
+gauges:
+  '0':
+    x: 965730.6630831676
+    y: 6536144.64039879
+  '1':
+    x: 965761.9686182153
+    y: 6536170.140933962
+  '2':
+    x: 965767.9809395159
+    y: 6536209.117361703
+  '3':
+    x: 965775.8591536338
+    y: 6536243.325396689
+  gauge_recording: true
+lake:
+  topography: topography_lake.asc
+  water_level: 1532.24
+  xmax: 965900
+  xmin: 965670
+  ymax: 6536300
+  ymin: 6536050
+output:
+  Language: French
+  delta_t: 0.5
+  output_format: binary
+  verbosity: 0
+rheology:
+  Strickler: 40
+  friction: true
+  friction_depth_limit: 20
+  gravity: 9.81
+  rho: 1000
+  wave_tolerance_flag: 0.2
+topo_files:
+  added_clawpack-compatible_topo: topography_lake.asc
+  coarse: topo2m_c.asc
+  fine: topo1m_simple.asc
+  mask_raster: mask.asc
+  mask_shp: masque.shp
+  missing_value: -9999
