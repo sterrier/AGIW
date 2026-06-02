@@ -411,7 +411,7 @@ def avac_parameters_import(file_name):
         # print(f"* {var_name} = {value}")
     return avac_parameters
 
-def avac_reload(folder=None):
+def avac_reload(folder = None):
     """
     Reloads the module module_avac in a robust way... so if changes are made in this file, it is possible to reload the module.
 
@@ -422,7 +422,7 @@ def avac_reload(folder=None):
         * module or None. The reloaded module or None in case of error
 
     """
-    # import importlib
+    
     import importlib.util
     import os
 
@@ -545,6 +545,107 @@ def claw_check_version(claw):
 
     return [major_value, minor_value]
 
+# export_claw_dem
+def claw_export_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topography.asc', boolean = False, Z_format='%9.2f', language = 'French'):
+    """
+    convert the DEM to a claw format and save it (clawpack topo type 3).
+    Context: this function provides raster files ~40 % smaller than the clawpack default '%15.7e'.
+    Use '%1i' (boolean=True) for integer masks.
+    Input:
+        - xmin,xmax,ymin,ymax : extent of the digital elevation model
+        - nbx,nby : numbers of rows and columns
+        - alt: matrix of elevation
+        - name_file: name of the file to which the data are exported
+        - boolean: if true, exports only 0 or 1 (to create a mask)
+        - Z_format: controls the ASCII format of elevation values. 
+          Default '%9.2f' (1 cm precision) is adequate for LiDAR DEMs and yields files
+    Output:
+        - raster file 'name_file' compatible with clawpack (topotype = 3)
+    """
+    if language == 'French':
+        print(f'* Export du MNT vers le raster {name_file}.')
+    else:
+        print(f'* Export of DEM to file {name_file}.')
+    
+    cell_size    = (xmax - xmin) / (nbx - 1)
+    no_data      = -9999
+    cell_size_y  = (ymax - ymin) / (nby - 1)
+
+    # Checks
+    deviation    = abs((cell_size-cell_size_y)/cell_size)
+    if deviation > 0.01: 
+            if language == 'French':
+                print(f"* Attention, je trouve dx = {cell_size:.2f} m et dy = {cell_size_y:.2f} m.")
+            else:
+                print(f"* Caveat: I found dx = {cell_size:.2f} m and dy = {cell_size_y:.2f} m.")
+    Z = np.where(np.isnan(alt), no_data, alt)
+    num_nan = np.isnan(alt).sum()
+    if num_nan > 0:
+        if language == 'French':
+            print(f'* Z contient {num_nan} valeurs non numériques (nan), remplacées par {no_data}.')
+        else:
+            print(f'* Z contains {num_nan} nan values, replacing with {no_data}.')
+
+    fmt = '%1i' if boolean else Z_format
+
+    with open(name_file, 'w') as f:
+        # geoclaw type-3 header (value first, then label)
+        f.write('%6i                              ncols\n'  % nbx)
+        f.write('%6i                              nrows\n'  % nby)
+        f.write('%22.15e              xlower\n'             % xmin)
+        f.write('%22.15e              ylower\n'             % ymin)
+        f.write('%22.15e              cellsize\n'           % cell_size)
+        f.write('%10i                          nodata_value\n' % no_data)
+        # data: one row per line, top row first (numpy.savetxt is C-level, ~50× faster than a Python loop)
+        np.savetxt(f, np.flipud(Z), fmt=fmt)
+
+# export_claw_dem_window
+def claw_export_dem_window(topo_file, window, name_file = 'topography_window.asc'):
+    """
+    Export a raster corresponding to window
+
+    Input
+    * topo_file: topo object
+    * window : (xmin_window, ymin_window, xmax_window, ymax_window)
+      The coordinates are snapped to the nearest grid nodes        
+    * name_file: output file name (default : 'topography_window.asc')
+    """
+    xmin_w, ymin_w, xmax_w, ymax_w = window
+
+    ix = np.where((topo_file.x >= xmin_w) & (topo_file.x <= xmax_w))[0]
+    iy = np.where((topo_file.y >= ymin_w) & (topo_file.y <= ymax_w))[0]
+
+    if ix.size == 0 or iy.size == 0:
+        raise ValueError("The requested window is outside or does not contain any points from the raster.")
+
+    Z_window            = topo_file.Z[np.ix_(iy, ix)]
+    xmin_out, xmax_out  = topo_file.x[ix[0]],  topo_file.x[ix[-1]]
+    ymin_out, ymax_out  = topo_file.y[iy[0]],  topo_file.y[iy[-1]]
+    nbx_out, nby_out    = len(ix), len(iy)
+
+    print(f'Export of windowed DEM to file {name_file}.')
+    print(f'  x : [{xmin_out:.1f}, {xmax_out:.1f}]  ({nbx_out} cols)')
+    print(f'  y : [{ymin_out:.1f}, {ymax_out:.1f}]  ({nby_out} rows)')
+
+    claw_export_dem(xmin_out, xmax_out, ymin_out, ymax_out, nbx_out, nby_out, Z_window, name_file)
+
+# export_claw_initiation_file
+def claw_export_initiation_file(topo_file, zi, filename = 'init.xyz'):   
+    """
+    save the initiation file as topotype-1 file
+    Input: topo_file, zi
+    Optional argument: filename
+    """
+    print(f'Export of initial conditions to file init.xyz.')   
+    init   = topotools.Topography()
+    init.X = topo_file.X 
+    init.Y = topo_file.Y 
+    init.Z = zi[:,:] 
+    init.y = init.Y[:,0]
+    init.x = init.X[0,:]
+    init.write(filename,topo_type=1)
+    print(f'* maximum initial depth of starting zone  = {round(np.max(zi[:,:]), 3)} m')    
+
 
 ##########
 # Raster #
@@ -618,6 +719,7 @@ def raster_determine_file_type(file):
     Input: raster *.brage.asc
     Output: the file type (grass, esri or claw format)
     """
+    
     try:
         with open(file, "r") as f:
             text = f.readline().strip()
@@ -1184,6 +1286,41 @@ def format_numbers(features):
         formatted_features.append([name, formatted_value])
     return formatted_features
 
+def rename_output_directory(config, current_directory, change_output_directory_name = False, overwrite_directory = False):
+    """
+    Rename output directory from '_output' to the name in the output dictionary (if existing).
+    Input:
+        * config: the configuration dictionary
+        * current_directory: Path object
+        * change_output_directory_name: boolean (False by default) 
+        * overwrite_directory: boolean (False by default
+    """
+    from pathlib import Path
+    output = config['output']
+
+    if change_output_directory_name:
+        print("Changing the name of the output directory")
+        if 'output_directory' in output:
+            output_dir_target = current_directory / output['output_directory']
+            output_dir        = current_directory / '_output'
+            if output['output_directory'] != '_output':
+                if output_dir.exists():
+                    if output_dir_target.exists():
+                        print(f"Directory {output_dir_target} already existing")
+                        if overwrite_directory:
+                            import shutil
+                            print("I will erase it")
+                            shutil.rmtree(output_dir_target)
+                            output_dir.rename(output_dir_target)
+                        else:
+                            print("Nothing to be done. I keep the existing directory.")
+                else:
+                    print("Error: the directory '_output' is missing!")
+            else:
+                print(f"Check the output dictionary. As output['output_directory'] is '_output, no change is neeed.")
+    else:
+        print("The output directory name is '_output'")
+
 
 ###################
 # Post-processing #
@@ -1199,8 +1336,6 @@ fn_u        = lambda q: np.where(q[0,:,:]>0, (q[1,:,:]/q[0,:,:]), 0)  # u
 fn_v        = lambda q: np.where(q[0,:,:]>0, (q[2,:,:]/q[0,:,:]), 0)  # v    
 fn_velocity = lambda q: np.where(q[0,:,:]>0, np.sqrt((q[2,:,:]/q[0,:,:])**2+(q[1,:,:]/q[0,:,:])**2), 0)  # v 
 
-
-# running AVAC
 
 def make_output(avac_p, verbosity=False):
     """
@@ -1580,122 +1715,6 @@ def export_raster(fname, tableau, xll, yll, cellsize, ndata = -9999, boolean = F
     fmt    = '%1i' if boolean else "%1.2f"
     np.savetxt(fname, np.nan_to_num(tableau.T[::-1,:] ,nan=ndata), header=header, fmt=fmt, comments='')
 
-
-###################################
-# Importing raster and shapefiles #
-###################################
-
-def export_claw_dem_topotool(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topography.asc', boolean = False):
-    """
-    convert the DEM to a claw format and save it.
-    Caveat. Consider that this finction uses the '%15.7e' format, and thus the size of the resulting file is large.
-    A reduced number of digits may be sufficient. In that case, use export_claw_dem
-    Input:
-        - xmin,xmax,ymin,ymax : extent of the digital elevation model
-        - nbx,nby : numbers of rows and columns
-        - alt: matrix of elevation
-        - name_file: name of the file to which the data are exported
-        - boolean: if true, exports only 0 or 1 (to create a mask)
-    output:
-        - raster file 'name_file' compatible with clawpack (topotype = 3)
-    """
-    print(f'Export of DEM to file {name_file}.')
-    x = np.linspace(xmin,xmax,nbx)
-    y = np.linspace(ymin,ymax,nby)
-    X_fine_grid, Y_fine_grid = np.meshgrid(x,y)
-
-    init = topotools.Topography()
-    init.X = X_fine_grid
-    init.Y = Y_fine_grid 
-    init.Z = alt
-    init.y = Y_fine_grid[:,0]
-    init.x = X_fine_grid[0,:]
-    if boolean:
-        init.write(name_file, topo_type = 3, Z_format = '%1i')
-    else:
-        init.write(name_file, topo_type = 3)
-
-def export_claw_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topography.asc', boolean = False,
-                    Z_format='%9.2f', language = 'French'):
-    """
-    convert the DEM to a claw format and save it (clawpack topo type 3).
-    Context: this function provides raster files ~40 % smaller than the clawpack default '%15.7e'.
-    Use '%1i' (boolean=True) for integer masks.
-    Input:
-        - xmin,xmax,ymin,ymax : extent of the digital elevation model
-        - nbx,nby : numbers of rows and columns
-        - alt: matrix of elevation
-        - name_file: name of the file to which the data are exported
-        - boolean: if true, exports only 0 or 1 (to create a mask)
-        - Z_formaz: controls the ASCII format of elevation values. 
-          Default '%9.2f' (1 cm precision) is adequate for LiDAR DEMs and yields files
-    Output:
-        - raster file 'name_file' compatible with clawpack (topotype = 3)
-    """
-    if language == 'French':
-        print(f'* Export du MNT vers le raster {name_file}.')
-    else:
-        print(f'* Export of DEM to file {name_file}.')
-    cell_size    = (xmax - xmin) / (nbx - 1)
-    no_data      = -9999
-    cell_size_y  = (ymax - ymin) / (nby - 1)
-    deviation    = abs((cell_size-cell_size_y)/cell_size)
-    if deviation > 0.01: 
-            if language == 'French':
-                print(f"* Attention, je trouve dx = {cell_size:.2f} m et dy = {cell_size_y:.2f} m.")
-            else:
-                print(f"* Caveat: I found dx = {cell_size:.2f} m and dy = {cell_size_y:.2f} m.")
-    Z = np.where(np.isnan(alt), no_data, alt)
-    num_nan = np.isnan(alt).sum()
-    if num_nan > 0:
-        if language == 'French':
-            print(f'* Z contient {num_nan} valeurs non numériques (nan), remplacées par {no_data}.')
-        else:
-            print(f'* Z contains {num_nan} nan values, replacing with {no_data}.')
-
-    fmt = '%1i' if boolean else Z_format
-
-    with open(name_file, 'w') as f:
-        # geoclaw type-3 header (value first, then label)
-        f.write('%6i                              ncols\n'  % nbx)
-        f.write('%6i                              nrows\n'  % nby)
-        f.write('%22.15e              xlower\n'             % xmin)
-        f.write('%22.15e              ylower\n'             % ymin)
-        f.write('%22.15e              cellsize\n'           % cell_size)
-        f.write('%10i                          nodata_value\n' % no_data)
-        # data: one row per line, top row first (numpy.savetxt is C-level, ~50× faster than a Python loop)
-        np.savetxt(f, np.flipud(Z), fmt=fmt)
-
-def export_claw_dem_window(topo_file, window, name_file='topography_window.asc'):
-    """
-    Export a raster corresponding to windiw
-
-    Input
-    * topo_file: topo object
-    * window : (xmin_window, ymin_window, xmax_window, ymax_window)
-      The coordinates are snapped to the nearest grid nodes        
-    * name_file: output file name (default : 'topography_window.asc')
-    """
-    xmin_w, ymin_w, xmax_w, ymax_w = window
-
-    ix = np.where((topo_file.x >= xmin_w) & (topo_file.x <= xmax_w))[0]
-    iy = np.where((topo_file.y >= ymin_w) & (topo_file.y <= ymax_w))[0]
-
-    if ix.size == 0 or iy.size == 0:
-        raise ValueError("The requested window is outside or does not contain any points from the raster.")
-
-    Z_window = topo_file.Z[np.ix_(iy, ix)]
-    xmin_out, xmax_out = topo_file.x[ix[0]],  topo_file.x[ix[-1]]
-    ymin_out, ymax_out = topo_file.y[iy[0]],  topo_file.y[iy[-1]]
-    nbx_out, nby_out   = len(ix), len(iy)
-
-    print(f'Export of windowed DEM to file {name_file}.')
-    print(f'  x : [{xmin_out:.1f}, {xmax_out:.1f}]  ({nbx_out} cols)')
-    print(f'  y : [{ymin_out:.1f}, {ymax_out:.1f}]  ({nby_out} rows)')
-
-    export_claw_dem(xmin_out, xmax_out, ymin_out, ymax_out,
-                    nbx_out, nby_out, Z_window, name_file)
-
 class WindowSelector:
     """
     Interactive tool for defining a rectangular window on a topographic plot.
@@ -1713,10 +1732,8 @@ class WindowSelector:
     sel.window provides the coordinates (xmin, ymin, xmax, ymax) of the window
     """
 
-    
-
-    def __init__(self, topo_file, figsize_width=10, contour_interval=25,
-                 azdeg=315, altdeg=45, language='English', line=[], step = 100):
+    def __init__(self, topo_file, figsize_width = 10, contour_interval = 20, azdeg = 315, altdeg = 45, language='English', line = [], grid = 100):
+        
         from matplotlib.backend_bases import MouseButton
         import matplotlib.pyplot as plt
         from matplotlib.widgets import RectangleSelector
@@ -1729,27 +1746,23 @@ class WindowSelector:
                   "Adjust using the handles.  ")
 
         self.window = None
+        self._fig, ax, self._x0, self._y0 = raster_plot_topo(topo_file, figsize_width = figsize_width, contour_interval = contour_interval, azdeg = azdeg, altdeg = altdeg, grid = grid)
 
-        self._fig, ax, self._x0, self._y0 = raster_plot_topo(
-            topo_file, figsize_width=figsize_width,
-            contour_interval=contour_interval, azdeg=azdeg, altdeg=altdeg, grid = step)
-
+        # Plot profile
         if len(line) >= 2:
-            ax.plot([line[0][0] - self._x0, line[1][0] - self._x0],
-                    [line[0][1] - self._y0, line[1][1] - self._y0],
-                    color='black')
+            ax.plot([line[0][0] - self._x0, line[1][0] - self._x0], [line[0][1] - self._y0, line[1][1] - self._y0], color='black')
 
         self._selector = RectangleSelector(
             ax,
             self._on_select,
-            useblit=False,
-            button=[MouseButton.LEFT],
-            minspanx=1,
-            minspany=1,
-            spancoords="data",
-            interactive=True,
-            props=dict(facecolor="tomato", edgecolor="red", alpha=0.25, fill=True),
-            handle_props=dict(markersize=6),
+            useblit         = False,
+            button          = [MouseButton.LEFT],
+            minspanx        = 1,
+            minspany        = 1,
+            spancoords      = "data",
+            interactive     = True,
+            props           = dict(facecolor = "tomato", edgecolor = "red", alpha = 0.25, fill = True),
+            handle_props    = dict(markersize = 6),
         )
         plt.show()
 
@@ -1766,22 +1779,6 @@ class WindowSelector:
             flush=True,
         )
 
-def export_claw_initiation_file(topo_file, zi, filename = 'init.xyz'):   
-    """
-    save the initiation file as topotype-1 file
-    Input: topo_file, zi
-    optional argument:filename
-    """
-    print(f'Export of initial conditions to file init.xyz.')   
-    init   = topotools.Topography()
-    init.X = topo_file.X 
-    init.Y = topo_file.Y 
-    init.Z = zi[:,:] 
-    init.y = init.Y[:,0]
-    init.x = init.X[0,:]
-    init.write(filename,topo_type=1)
-    print(f'* maximum initial depth of starting zone  = {np.max(zi[:,:])} m')    
-
 
 ###########
 # Testing #
@@ -1791,36 +1788,4 @@ def format_m(x, decimals=1):
     """espace fine insécable"""
     return f"{x:_.{decimals}f}".replace("_", "\u202f")   
 
-def rename_output_directory(config, current_directory, Change_output_directory_name=False, Overwrite_directory=False):
-    """
-    Rename output directory from '_output' to the name in the output dictionary (if existing).
-    Input:
-        * config: the configuration dictionary
-        * current_directory: Path object
-        * Change_output_directory_name: boolean (False by default) 
-        * Overwrite_directory: boolean (False by default
-    """
-    from pathlib import Path
-    output = config['output']
-    if Change_output_directory_name:
-        print("Changing the name of the output directory")
-        if 'output_directory' in output:
-            output_dir_target = current_directory / output['output_directory']
-            output_dir        = current_directory / '_output'
-            if output['output_directory'] != '_output':
-                if output_dir.exists():
-                    if output_dir_target.exists():
-                        print(f"Directory {output_dir_target} already existing")
-                        if Overwrite_directory:
-                            import shutil
-                            print("I will erase it")
-                            shutil.rmtree(output_dir_target)
-                            output_dir.rename(output_dir_target)
-                        else:
-                            print("Nothing to be done. I keep the existing directory.")
-                else:
-                    print("Error: the directory '_output' is missing!")
-            else:
-                print(f"Ckeck the output dictionary. As output['output_directory'] is '_output, no change is neeed.")
-    else:
-        print("The output directory name is '_output'")
+

@@ -192,7 +192,7 @@ def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,language='French',m
     Note that if erase = False, then the dummy file 'masque.asc' is conserved and is compatible with Qgis
     """
     import subprocess
-    from module_avac import raster_read_features, raster_read_file, export_claw_dem
+    from module_avac import raster_read_features, raster_read_file, claw_export_dem
     xmin, xmax, ymin, ymax, nbx, nby, cell_size, \
         dictionary_extent, failure, remarks, grid_type = raster_read_features(topo_dir / lake['topography'])
     if mask_cell_size is not None:
@@ -226,7 +226,7 @@ def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,language='French',m
 
     # Export to geoclaw raster file that can be read by geoclaw
     mask_r = raster_read_file(str(out_asc))
-    export_claw_dem(mask_r.x.min(),mask_r.x.max(),mask_r.y.min(),mask_r.y.max(),mask_r.Z.shape[1],mask_r.Z.shape[0],
+    claw_export_dem(mask_r.x.min(),mask_r.x.max(),mask_r.y.min(),mask_r.y.max(),mask_r.Z.shape[1],mask_r.Z.shape[0],
                     mask_r.Z,name_file =str(path_mask) ,boolean = True, language = language )
     # Erasing the dummy files
     if erase: 
