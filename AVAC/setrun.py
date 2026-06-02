@@ -158,7 +158,7 @@ def setrun(claw_pkg='geoclaw'):
     # --------------
     # Output format:
     #---------------
-    clawdata.output_format = OUT['output_format']      # 'ascii', 'binary32" "binary64
+    clawdata.output_format = OUT['output_format']      # 'ascii', 'binary32' 'binary64'
     clawdata.output_q_components   = 'all'   # could be list such as [True,True]
     clawdata.output_aux_components = [True]  # could be list
     clawdata.output_aux_onlyonce   = False   # output aux arrays only at t0. False required for post process in jupyter
