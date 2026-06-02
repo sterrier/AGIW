@@ -45,7 +45,7 @@ lake:
   ymax: 6536300
   ymin: 6536050
 output:
-  Language: French
+  language: French
   carto_layout:
     major_label_step: 500
     margin: 100

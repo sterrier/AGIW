@@ -23,6 +23,7 @@ import  yaml
 # AVAC #
 ########
 
+# get_version_from_file
 def avac_get_version_from_file(file_path):
     """Extract the version from a file if it exists in the working directory."""
     # Regular expression to extract filename & version number
@@ -37,6 +38,7 @@ def avac_get_version_from_file(file_path):
         pass  # Ignore errors
     return None, None
 
+# install_avac
 def avac_install(**kwargs):
     """ 
     This function extracts the files required by AVAC
@@ -60,6 +62,7 @@ def avac_install(**kwargs):
     archive = kwargs.get('archive', 'files.tar.gz')
     verbosity = kwargs.get('verbosity', False)
       
+    # extract_path = '.'  # Extract to current directory
     if not os.path.isfile(archive): 
         print(f"Installation impossible. Archive {archive} is missing.")
         print(f"Stopped...")
@@ -96,8 +99,8 @@ def avac_install(**kwargs):
                                 if verbosity:
                                     print(f"Updating {filename} (Old: {existing_version}, New: {archive_version})")
                                 with open(file_path, "wb") as f_out:
-                                    f_out.write((first_line + "\n").encode())
-                                    f_out.write(remaining_content)
+                                    f_out.write((first_line + "\n").encode())  # Restore first line
+                                    f_out.write(remaining_content)  # Write the rest
                             else:
                                 if verbosity:
                                     print(f"Skipping {filename}, version {existing_version} is up to date.")
@@ -105,11 +108,12 @@ def avac_install(**kwargs):
                             # Extract file
                             if verbosity: print(f"Extracting new file: {filename}")
                             with open(file_path, "wb") as f_out:
-                                f_out.write((first_line + "\n").encode())
-                                f_out.write(remaining_content)
+                                f_out.write((first_line + "\n").encode())  # Restore first line
+                                f_out.write(remaining_content)  # Write the rest
 
     print(f"=> You are using AVAC version {avac_get_version_from_file('Makefile')[1]}.")
 
+# import_configuration_files
 def avac_parameters_import(file_name):
     """
     import the configuration and check consistency
@@ -225,25 +229,25 @@ def avac_parameters_import(file_name):
                             'u_cr',
                             'xi',
                             ]
-    keys_topography    = [  
+    keys_topography    = [
                             'dem',
                             'finer_dem',
                             'starting_areas',
                             'topo_refinement',
                             'topo_source',
-                            ]    
+                            ]
     
     animation_formats  = ['depth', 'pressure', 'velocity']
     rheological_models = ['Coulomb', 'Voellmy']
     output_formats     = ['ascii', 'binary32', 'binary64']
     output_languages   = ['English', 'French']
-    verbosity_formats  = [0, 1, 2, 3, 4] # see https://www.clawpack.org/pyclaw/output.html
+    verbosity_formats  = [0, 1, 2, 3, 4]  # see https://www.clawpack.org/pyclaw/output.html
     boundary_formats   = ['extrap', 'user', 'wall']
 
 
     # Check categories
     error = 0
-    error += dict_test_keys(avac_parameters, keys_avac)
+    error += dict_test_keys(avac_parameters, keys_avac)  # check whether the config file keys are those expected
 
     print()
 
@@ -329,13 +333,13 @@ def avac_parameters_import(file_name):
         print(f"* Check variable beta = {avac_parameters['rheology']['beta']}.")
         print(f"* This value should be in the 0-1.5 range.")
         error += 1
+    if avac_parameters['rheology']['model'] not in rheological_models:
+        print(f"* The rheological model {avac_parameters['rheology']['model'] } is unknown!")
+        print(f"* The only current possibilities are: 'Coulomb' or 'Voellmy'.")
     if avac_parameters['rheology']['mu'] < 0.05 or avac_parameters['rheology']['mu'] > 0.5:
         print(f"* Check variable mu = {avac_parameters['rheology']['mu']}.")
         print(f"* This value should be in the 0.05-0.5 range.")
         error += 1
-    if avac_parameters['rheology']['model'] not in rheological_models:
-        print(f"* The rheological model {avac_parameters['rheology']['model'] } is unknown!")
-        print(f"* The only current possibilities are: 'Coulomb' or 'Voellmy'.")
     if avac_parameters['rheology']['rho'] < 100 or avac_parameters['rheology']['rho'] > 1000:
         print(f"* Check variable rho = {avac_parameters['rheology']['rho']}.")
         print(f"* This value should be in the 100-1000 range.")
@@ -368,7 +372,7 @@ def avac_parameters_import(file_name):
             print(f"* Finer topography: I found the DEM file {fine_topo_path} in the directory {topo_dir}.")
         test_success = [bool(chain) for chain in raster_read_features(fine_topo_path)[8]]
         if np.all(np.array(test_success)):
-            print("* File import raises no issue.")
+            print(f"* File import raises no issue.")
         else:
             print(f"* When importing file {avac_parameters['topography']['finer_dem']}, I found errors in the header. Please check.")
             error += 1
@@ -377,7 +381,6 @@ def avac_parameters_import(file_name):
         print("* No starting areas shapefile specified (starting_areas is null).")
     else:
         file_path = Path(topo_dir) / file_path
-        # if os.path.isfile(file_path):
         if file_path.exists():
             print(f"* I found the shapefile {file_path} containing the starting areas.")
             # print(f"  It seems ok.")
@@ -386,19 +389,18 @@ def avac_parameters_import(file_name):
             error += 1
         file_path = avac_parameters['topography']['starting_areas'][:-3]+'shx'
         file_path = Path(topo_dir) / file_path
-        # if not os.path.isfile(file_path):
         if not file_path.exists():
             print(f"* File {file_path} is missing! Please check. ")
             print(f"  This file accompanies the shapefile. Find it or reconstruct it using gdal.")
             error +=1
 
-    print()    
+    print()
     if error>0:
         print(f"Error(s) detected: {error}")
     else:
         print("Everything looks fine so far.")
     print()
-    
+
     # Flatten the configuration dictionary
     flat_configuration = dict_flatten(avac_parameters)
 
@@ -420,7 +422,7 @@ def avac_reload(folder=None):
         * module or None. The reloaded module or None in case of error
 
     """
-    import importlib
+    # import importlib
     import importlib.util
     import os
 
@@ -488,9 +490,10 @@ def avac_reload(folder=None):
 # Clawpack #
 ############
 
+# check_claw
 def claw_check_installation():
     """ 
-    Test if clawpack is installed. If so, returns the CLAW path
+    Test if clawpack is installed. If so, it returns the CLAW path
     """
 
     CLAW = os.environ['CLAW']
@@ -511,10 +514,11 @@ def claw_check_installation():
             return claw
     else:
         return CLAW
-    
+
+# check_version
 def claw_check_version(claw):
     claw_setup = claw + "/setup.py"
-    
+
     # Open the file
     with open(claw_setup, "r") as file:
         # Initialize variables to store MAJOR and MINOR values
@@ -536,17 +540,17 @@ def claw_check_version(claw):
             # Check if the line starts with "MINOR" and contains "="
             elif line.startswith("MINOR") and "=" in line:
                 parts = line.split("=")
-                if len(parts) == 2:   
+                if len(parts) == 2:
                     minor_value = int(parts[1].strip())
-    
-    return [major_value, minor_value]
 
+    return [major_value, minor_value]
 
 
 ##########
 # Raster #
 ##########
 
+# check_raster
 def raster_check(filepath):
     """
     checks whether 'file' is a raster file
@@ -554,16 +558,16 @@ def raster_check(filepath):
             False if import raises problems
     """
 
-    print(f"Raster file: {filepath}") 
+    print(f"Raster file: {filepath}")
 
     print()
     if os.path.isfile(filepath):
         print(f"File {filepath} exists in the working directory.")
-    
+
     print()
     xmin, xmax, ymin, ymax, nbx, nby, cell_size, dico, failure, remarks, grid_type = raster_read_features(filepath)
     raster_features = [['xmin',xmin],['xmax',xmax],['ymin',ymin],['ymax',ymax],['nbx',nbx],['nby',nby],['cell size',cell_size]]
-    
+
     # Check if all strings are empty
     test_all_remark_empty   = np.all(remarks == '')
     test_all_success_import = np.all(failure == 'True')
@@ -577,10 +581,10 @@ def raster_check(filepath):
             print("* ", rmk)
     else:
         print("Check your file! I am not able to import it as a raster file.")
-    
+    raster_type = raster_determine_file_type(filepath)
+
     print()
     print('Raster features')
-    raster_type = raster_determine_file_type(filepath)
     print(f"* The raster format is: {raster_type}.")   
     print(f"* The grid type is: {grid_type}.")      
 
@@ -607,6 +611,7 @@ def raster_check(filepath):
     else:
         return False
 
+# determine_file_type
 def raster_determine_file_type(file):
     """ 
     Goal: determining the nature of a raster file
@@ -616,11 +621,12 @@ def raster_determine_file_type(file):
     try:
         with open(file, "r") as f:
             text = f.readline().strip()
-        
+
         # Regular expression to find the first number
         # number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
+        # Search for the first number
         # number_match = re.search(number_pattern, text)
-        
+        # Search for the first word
         # Regular expression to find the first word
         word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only)
         word_match = re.search(word_pattern, text)
@@ -645,6 +651,7 @@ def raster_determine_file_type(file):
     except FileNotFoundError:
         print(f"The file '{file}' does not exist.")
 
+# count_header_lines
 def raster_header_count_lines(filepath, num_lines = 10):
     """
     dertermines the header size of the raster file, i.e.
@@ -652,6 +659,7 @@ def raster_header_count_lines(filepath, num_lines = 10):
     Input: file name
     Output: number of lines
     """
+
     count = 0
     for i in range(1, num_lines + 1):  # Les lignes dans linecache commencent à 1
         line = getline(filepath, i).strip()  # Supprime espaces et \n
@@ -752,6 +760,7 @@ def raster_parse_header(source):
 
     return xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, failure, remarks, grid_type
 
+# plot_topo
 def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval = 20,
               azdeg = 315, altdeg = 45, grid = 200, ylabel_position = "left"):
     """
@@ -760,7 +769,7 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
     If ax is None, create a new figure with dimensions suitable for the raster. The axis ticks should align with multiples of 100 m (absolute coordinates).
 
     Input:
-        * topo_file        : object returned by raster_read_file
+        * topo_file        : object returned by raster_read_file (Digital Elevation Model, DEM)
         * ax               : existing matplotlib axis (optional; if None, a figure is created)
         * figsize_width    : width of the figure in inches if ax=None (default is 10)
         * contour_interval : contour line spacing in meters (default is 25)
@@ -789,7 +798,7 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
         fig, ax = plt.subplots(figsize = (w, h), layout = 'constrained')
         try:
             if hasattr(fig.canvas, 'header_visible'):
-                setattr(fig.canvas, 'header_visible', False)   # ipympl uniquement
+                setattr(fig.canvas, 'header_visible', False)  # ipympl uniquement
         except AttributeError:
             pass
     else:
@@ -854,41 +863,41 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
 
     return fig, ax, x0, y0
 
+# reading_raster_file_features
 def raster_read_features(source): 
     '''
     Read raster data from source. The source uses ASCII Grass format (based on cardinal directions). The 
-    function raster_read_file extracts information from the header
+    function extracts information from the header
     For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
     input: raster file
     output: xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary, failure, remarks
     '''
-   
+
     xmin, xmax, ymin, ymax, nbx, nby, cell_size, _, failure, remarks, grid_type = raster_parse_header(source)
     dictionary_extent = {
-                    'xmin':         xmin,
-                    'xmax':         xmax,
-                    'ymin':         ymin,
-                    'ymax':         ymax,
-                    'nbx':          nbx,
-                    'nby':          nby,
-                    'cell_size':    cell_size,
-                    'nodata_value': -9999,
-                    }
+                        'xmin':         xmin,
+                        'xmax':         xmax,
+                        'ymin':         ymin,
+                        'ymax':         ymax,
+                        'nbx':          nbx,
+                        'nby':          nby,
+                        'cell_size':    cell_size,
+                        'nodata_value': -9999,
+                        }
 
     return xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary_extent, failure, remarks, grid_type 
 
+# reading_raster_file
 def raster_read_file(source, nan_replace = False): 
     '''
     Read raw data from source. The source uses ASCII Grass format (based on cardinal directions). The 
-    function raster_read_file does some work to read and convert these data
+    function does some work to read and convert these data
     into a format compatible with clawpack
     For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
     '''
     source = str(source)
     xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, _, _, _ = raster_parse_header(source)
-    # header_size = raster_header_count_lines(source, num_lines = 10)
-    # header      = [getline(source, i) for i in range(1, header_size + 1)]
-    tab         = np.genfromtxt(source, skip_header = header_size, missing_values = '*' ) 
+    tab = np.genfromtxt(source, skip_header = header_size, missing_values = '*' ) 
     if nan_replace:
         tab = np.nan_to_num(tab, nan = -9999)
 
@@ -909,6 +918,7 @@ def raster_read_file(source, nan_replace = False):
 # Shapefile #
 #############
 
+# import_initial_condition
 def shapefile_import_initial_condition(file):
     """"
     imports the starting-area shapefile.
@@ -936,6 +946,7 @@ def shapefile_import_initial_condition(file):
         print("The shapefile does not have a defined CRS.")
     return areas, nb_areas 
 
+# import_polylines
 def shapefile_import_polylines(file = 'profil.shp', language = 'English'):
     """ import a polyline and describes its features.
     Input:
@@ -958,16 +969,18 @@ def shapefile_import_polylines(file = 'profil.shp', language = 'English'):
              'French': f"Dimensions du vecteur (array) des coordonnées : "}
     text5 = {'English':f"Error... No data found!",
              'French': f"Erreur... Pas de données !"}
-    
+
     # Extract coordinates from the geometry
+    coords_array = None
     if len(ligne) > 0:
         # Get the first (and probably only) geometry
         geometry = ligne.geometry.iloc[0]
         geom_type = getattr(geometry, 'geom_type', None)
 
         # Extract coordinates
+        coords = []
         if geom_type == 'LineString':
-            coords = np.array(geometry.coords)
+            coords = np.array(geometry.coords)  # pyright: ignore[reportAttributeAccessIssue]
             text1 = {'English':f"I import a LineString object with {len(coords)} points",
                      'French': f"J'importe la polyline composée de {len(coords)} points"}
             print(text1[language])
@@ -976,19 +989,19 @@ def shapefile_import_polylines(file = 'profil.shp', language = 'English'):
         elif geom_type == 'MultiLineString':
             # For MultiLineString, we will have trouble...
             coords = []
-            for line in geometry.geoms:
+            for line in geometry.geoms:  # pyright: ignore[reportAttributeAccessIssue]
                 coords.extend(list(line.coords))
             text2 = {'English':f"I found a MultiLineString with {len(coords)} as the total number of points.",
                      'French': f"J'ai trouvé un objet MultiLineString composé en tout de {len(coords)} points"}
             print(text2[language])
             print(text3[language])
-            
+
         # Convert to numpy array for easier manipulation
         coords_array = np.array(coords)
         print(text4[language], coords_array.shape)
     else:
         print(text5[language])
-        
+
     return ligne, coords_array
 
 
@@ -1021,6 +1034,7 @@ def correctingFactor2(z, zref, gradient_hypso):
            gradient_hypso: hypsometric gradient (additional snow [m] quantity per 100-m altitude range)
     Output: correction
     """
+
     return (z - zref) * gradient_hypso / 100
 
 def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points = 1000):
@@ -1042,7 +1056,7 @@ def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points = 1
 
     from scipy.interpolate import RegularGridInterpolator
     from scipy.spatial.distance import cdist
-    
+
     # Create interpolator for DEM
     # Use np.ma.filled so that masked cells become NaN rather than being
     # interpolated from the raw fill value (-2e99 for fgmax never-wet cells).
@@ -1084,6 +1098,7 @@ def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points = 1
     
     return sampling_distances, elevations, sampled_points
 
+# flatten_dict
 def dict_flatten(d, parent_key='', sep='.'):
     """
     Flattens a nested dictionary into a single-level dictionary.
@@ -1100,6 +1115,7 @@ def dict_flatten(d, parent_key='', sep='.'):
             items[new_key] = v
     return items
 
+# test_keys
 def dict_test_keys(dictionary_tested, dictionary_ref) -> int:
     """ 
     Checks whether all the keys in dictionary_ref are defined in dictionary_tested.
@@ -1108,7 +1124,7 @@ def dict_test_keys(dictionary_tested, dictionary_ref) -> int:
     # Convert list to dictionnary
     if not isinstance(dictionary_ref, dict):
         dictionary_ref = {key: None for key in dictionary_ref}
-    
+
     if not sorted(list(dictionary_tested.keys()) ) == sorted(list(dictionary_ref.keys())):
         # print('* The configuration file does not satisfy the requirements.')
         difference_1 = sorted(set(dictionary_ref.keys()) - set(dictionary_tested.keys()))
@@ -1261,7 +1277,7 @@ def make_output(avac_p, verbosity=False):
     # Thread: write stdout to avac.log in real time
     def _log_writer():
         with open("avac.log", "w") as log_file:
-            for line in process.stdout:
+            for line in (process.stdout or []):
                 log_file.write(line)
                 log_file.flush()
                 if verbosity:
@@ -1286,7 +1302,7 @@ def make_output(avac_p, verbosity=False):
     def _read_frame_mass(frame_idx):
         """Return (total_wet_mass_kg, moving_mass_kg) from fort.q<frame_idx>."""
         try:
-            from clawpack import pyclaw as _pyclaw # type: ignore
+            from clawpack import pyclaw as _pyclaw  # type: ignore
             sol = _pyclaw.Solution()
             fmt = avac_p['output']['output_format']
             file_format = 'ascii' if fmt == 'ascii' else 'binary'
@@ -1541,7 +1557,7 @@ def extract_values(text):
         return False
 
 # export-to-Qgis function 
-def export_raster(fname, tableau, xll, yll, cellsize, ndata=-9999, boolean=False):
+def export_raster(fname, tableau, xll, yll, cellsize, ndata = -9999, boolean = False):
     """
     export numpy arrays 'tableau' to file fname in an esri ASCII format
     """
@@ -1585,9 +1601,9 @@ def export_claw_dem_topotool(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 
     init.y = Y_fine_grid[:,0]
     init.x = X_fine_grid[0,:]
     if boolean:
-     init.write(name_file,topo_type=3, Z_format='%1i')
+        init.write(name_file, topo_type = 3, Z_format = '%1i')
     else:
-        init.write(name_file,topo_type=3)
+        init.write(name_file, topo_type = 3)
 
 def export_claw_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topography.asc', boolean = False,
                     Z_format='%9.2f', language = 'French'):
@@ -1737,7 +1753,7 @@ class WindowSelector:
             flush=True,
         )
 
-def export_claw_initiation_file(topo_file, zi, filename='init.xyz'):   
+def export_claw_initiation_file(topo_file, zi, filename = 'init.xyz'):   
     """
     save the initiation file as topotype-1 file
     Input: topo_file, zi
@@ -1757,7 +1773,6 @@ def export_claw_initiation_file(topo_file, zi, filename='init.xyz'):
 ###########
 # Testing #
 ###########
-
 
 def format_m(x, decimals=1):
     """espace fine insécable"""

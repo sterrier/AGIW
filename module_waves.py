@@ -24,11 +24,11 @@ def check_configuration(config, topo_dir, damping_max= 0.4):
     """
     from pathlib import Path
     try:
-        from module_avac import reading_raster_file_features
+        from module_avac import raster_read_features
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import reading_raster_file_features
+        from module_avac import raster_read_features
 
     topo_dir    = Path(topo_dir)
     topo_files  = config['topo_files']
@@ -57,8 +57,8 @@ def check_configuration(config, topo_dir, damping_max= 0.4):
     mask_path = topo_dir / topo_files.get('mask_raster', '')
     if mask_path.exists() and lake_topo_path.exists():
         try:
-            _, _, _, _, _, _, cs_mask, _, _, _, _ = reading_raster_file_features(mask_path)
-            _, _, _, _, _, _, cs_mnt,  _, _, _, _ = reading_raster_file_features(lake_topo_path)
+            _, _, _, _, _, _, cs_mask, _, _, _, _ = raster_read_features(mask_path)
+            _, _, _, _, _, _, cs_mnt,  _, _, _, _ = raster_read_features(lake_topo_path)
             if abs(cs_mask - cs_mnt) > 1e-6:
                 errors.append(
                     f"  [topo_files/lake] Incohérence de maille : "
@@ -174,7 +174,7 @@ def format_m(x, decimals=1):
     """espace fine insécable"""
     return f"{x:_.{decimals}f}".replace("_", "\u202f")   
 
-def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,Language='French',mask_cell_size=None):
+def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,language='French',mask_cell_size=None):
     """
     Create a mask by clipping the topo file
     Input:
@@ -192,9 +192,9 @@ def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,Language='French',m
     Note that if erase = False, then the dummy file 'masque.asc' is conserved and is compatible with Qgis
     """
     import subprocess
-    from module_avac import reading_raster_file_features, reading_raster_file, export_claw_dem
+    from module_avac import raster_read_features, raster_read_file, export_claw_dem
     xmin, xmax, ymin, ymax, nbx, nby, cell_size, \
-        dictionary_extent, failure, remarks, grid_type = reading_raster_file_features(topo_dir / lake['topography'])
+        dictionary_extent, failure, remarks, grid_type = raster_read_features(topo_dir / lake['topography'])
     if mask_cell_size is not None:
         cell_size = mask_cell_size
     # adresses
@@ -225,19 +225,19 @@ def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,Language='French',m
     ], check=True)
 
     # Export to geoclaw raster file that can be read by geoclaw
-    mask_r = reading_raster_file(str(out_asc))
+    mask_r = raster_read_file(str(out_asc))
     export_claw_dem(mask_r.x.min(),mask_r.x.max(),mask_r.y.min(),mask_r.y.max(),mask_r.Z.shape[1],mask_r.Z.shape[0],
-                    mask_r.Z,name_file =str(path_mask) ,boolean = True, Language = Language )
+                    mask_r.Z,name_file =str(path_mask) ,boolean = True, language = language )
     # Erasing the dummy files
     if erase: 
         out_asc.unlink()
     else:
-        if Language == 'French':
+        if language == 'French':
             print("J'ai gardé le fichier temporaire masque.asc (comptatible qgis).")
         else:
             print("I kept the temporary file (qgis compatible) file masque.asc")
     out_tif.unlink()
-    if Language == 'French': 
+    if language == 'French': 
         print(f"Masque créé : {path_mask}")
     else:
         print(f"Mask created: {path_mask}")
@@ -451,7 +451,7 @@ def modify_spillway_elevation(topo_file, shapefile_path, half_width, new_altitud
     Rehausse localement le MNT dans une bande rectangulaire centrée sur une polyligne.
 
     Entrées :
-        * topo_file      : objet Topography retourné par reading_raster_file
+        * topo_file      : objet Topography retourné par raster_read_file
         * shapefile_path : chemin vers le shapefile de la polyligne (axe du seuil)
         * half_width     : demi-largeur de la zone de modification de part et d'autre de la polyligne (mètres)
         * new_altitude   : nouvelle altitude du seuil (mètres, même système de coordonnées que le MNT)
@@ -519,11 +519,11 @@ def boundary_values(face, frame, config,  origine = True):
     from pathlib import Path
     topo_dir = Path(config['directory']['project_directory'])
     try:
-        from module_avac import reading_raster_file_features, fn_hv, fn_hu, fn_h, fn_eta
+        from module_avac import raster_read_features, fn_hv, fn_hu, fn_h, fn_eta
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import reading_raster_file_features, fn_hv, fn_hu, fn_h, fn_eta
+        from module_avac import raster_read_features, fn_hv, fn_hu, fn_h, fn_eta
 
     topo_files  = config['topo_files']
     lake        = config['lake']
@@ -579,11 +579,11 @@ def Create_Animation(frames, x_profil, y_profil, config, temps_in, offset_min = 
     from pathlib import Path
     topo_dir = Path(config['directory']['project_directory'])
     try:
-        from module_avac import reading_raster_file_features, fn_hv, fn_hu, fn_h, fn_eta, fn_ground
+        from module_avac import raster_read_features, fn_hv, fn_hu, fn_h, fn_eta, fn_ground
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import reading_raster_file_features, fn_hv, fn_hu, fn_h, fn_eta, fn_ground
+        from module_avac import raster_read_features, fn_hv, fn_hu, fn_h, fn_eta, fn_ground
     x_début  = x_profil[0]
     y_début  = y_profil[0]
     distance = ((x_profil-x_début)**2+(y_profil-y_début)**2)**0.5
@@ -657,11 +657,11 @@ def calculate_inflow_rate(contour_dict,config_total,verbosity = False, calculate
     if not verbosity:
         import io, contextlib
     try:
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
 
     # répertoire
     topo_dir    = Path(config_total['répertoires']['topo_dir'])
@@ -716,7 +716,7 @@ def calculate_inflow_rate(contour_dict,config_total,verbosity = False, calculate
     grid_shape  = X_grille.shape
 
     # masque du lac sur la grille de tout le domaine
-    lake_mask_file          = reading_raster_file(topo_dir / wave_config['topo_files']['mask_raster'])
+    lake_mask_file          = raster_read_file(topo_dir / wave_config['topo_files']['mask_raster'])
     interpolation_lake_mask = RegularGridInterpolator(
         (lake_mask_file.y, lake_mask_file.x), lake_mask_file.Z, method='nearest',
         bounds_error=False, fill_value=0
@@ -864,11 +864,11 @@ def calculate_inflow(contour_dict,config_total,verbosity = False):
     if not verbosity:
         import io, contextlib
     try:
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
 
     # répertoire
     topo_dir    = Path(config_total['répertoires']['topo_dir'])
@@ -941,7 +941,7 @@ def calculate_inflow(contour_dict,config_total,verbosity = False):
     
 
     # masque du lac sur la grille de tout le domaine
-    lake_mask_file          = reading_raster_file(topo_dir / wave_config['topo_files']['mask_raster'])
+    lake_mask_file          = raster_read_file(topo_dir / wave_config['topo_files']['mask_raster'])
     interpolation_lake_mask = RegularGridInterpolator(
         (lake_mask_file.y, lake_mask_file.x), lake_mask_file.Z, method='nearest',
         bounds_error=False, fill_value=0
@@ -1128,11 +1128,11 @@ def create_plot_lake_contour_meshing(config_total,topo_file = None, frame_test =
     if not verbosity:
         import io, contextlib
     try:
-        from module_avac import plot_topo, fn_h
+        from module_avac import raster_plot_topo, fn_h
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import plot_topo, fn_h
+        from module_avac import raster_plot_topo, fn_h
     
     topo_dir    = Path(config_total['répertoires']['topo_dir'])
     # avac config
@@ -1207,7 +1207,7 @@ def create_plot_lake_contour_meshing(config_total,topo_file = None, frame_test =
         # paramètre de la carte
         minor_step = config_total['waves']['output']['carto_layout']['minor_label_step']
         margin     = config_total['waves']['output']['carto_layout']['margin']  # mètres
-        fig, ax, x0, y0 = plot_topo(topo_file, step = minor_step)
+        fig, ax, x0, y0 = raster_plot_topo(topo_file, step = minor_step)
         # limites du domaine comme rectangle rouge
         ax.add_patch(plt.Rectangle((xmin-x0, ymin-y0),
                                     width  = xmax-xmin,
@@ -1267,11 +1267,11 @@ def calculate_overflow_rate(config_total,verbosity = False):
     if not verbosity:
         import io, contextlib
     try:
-        from module_avac import plot_topo, fn_h
+        from module_avac import raster_plot_topo, fn_h
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import plot_topo, fn_h
+        from module_avac import raster_plot_topo, fn_h
     
     topo_dir    = Path(config_total['répertoires']['topo_dir'])
     # information sur le contour
@@ -1515,11 +1515,11 @@ def plot_avalanche(target_time,config_total,topo_file, verbosity = False, cmap =
     if not verbosity:
         import io, contextlib
     try:
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
     from module_waves import create_lake_contour_mesh
 
 
@@ -1589,7 +1589,7 @@ def plot_avalanche(target_time,config_total,topo_file, verbosity = False, cmap =
     grid_shape  = X_grille.shape
 
     # masque du lac sur la grille de tout le domaine
-    lake_mask_file          = reading_raster_file(topo_dir / wave_config['topo_files']['mask_raster'])
+    lake_mask_file          = raster_read_file(topo_dir / wave_config['topo_files']['mask_raster'])
     interpolation_lake_mask = RegularGridInterpolator(
         (lake_mask_file.y, lake_mask_file.x), lake_mask_file.Z, method='nearest',
         bounds_error=False, fill_value=0
@@ -1646,8 +1646,8 @@ def plot_avalanche(target_time,config_total,topo_file, verbosity = False, cmap =
     margin = wave_config['output']['carto_layout']['margin']
     fig, (ax_wave, ax_avac) = plt.subplots(1, 2, figsize=(2*w, h), layout='constrained')
 
-    fig_tmp, ax_wave, x0, y0 = plot_topo(topo_file, ax=ax_wave, step = minor_step*2)
-    fig_tmp, ax_avac, x0, y0 = plot_topo(topo_file, ax=ax_avac, step = minor_step*2)
+    fig_tmp, ax_wave, x0, y0 = raster_plot_topo(topo_file, ax=ax_wave, step = minor_step*2)
+    fig_tmp, ax_avac, x0, y0 = raster_plot_topo(topo_file, ax=ax_avac, step = minor_step*2)
     ax_wave.add_patch(plt.Rectangle((xmin-x0, ymin-y0),
                                 width  = xmax-xmin,
                                 height = ymax-ymin,
@@ -1687,11 +1687,11 @@ def init_plot_avalanche_side_by_side(config_total, topo_file, margin=50, figsize
     import io, contextlib
     import matplotlib.pyplot as plt
     try:
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import plot_topo, fn_h, reading_raster_file
+        from module_avac import raster_plot_topo, fn_h, raster_read_file
     
     topo_dir  = Path(config_total['répertoires']['topo_dir'])
     avac_dir  = Path(config_total['répertoires']['avac_dir'])
@@ -1731,8 +1731,8 @@ def init_plot_avalanche_side_by_side(config_total, topo_file, margin=50, figsize
     w, h = figsize_width, figsize_width * dy_t / dx_t
     fig, (ax_w, ax_a) = plt.subplots(1, 2, figsize=(2*w, h), layout='constrained')
 
-    _, ax_w, x0, y0 = plot_topo(topo_file, ax=ax_w, step=step)
-    _, ax_a, x0, y0 = plot_topo(topo_file, ax=ax_a, step=step)
+    _, ax_w, x0, y0 = raster_plot_topo(topo_file, ax=ax_w, step=step)
+    _, ax_a, x0, y0 = raster_plot_topo(topo_file, ax=ax_a, step=step)
 
     for ax in (ax_w, ax_a):
         ax.add_patch(plt.Rectangle((xmin-x0, ymin-y0), xmax-xmin, ymax-ymin,
@@ -1835,7 +1835,7 @@ def linestring_to_arrays_with_normals(line: LineString, n_pts: int = 200):
     from pathlib import Path
     from clawpack.geoclaw import fgout_tools
     from clawpack.visclaw.plottools import pcolorcells
-    from module_avac import plot_topo
+    from module_avac import raster_plot_topo
     from scipy.interpolate import RegularGridInterpolator
     import numpy.ma as ma
     coords    = np.array(line.coords)            # (n_segments+1, 2)
@@ -1883,11 +1883,11 @@ def init_plot_avalanche(config_total, topo_file, polyligne:LineString, margin=50
     import matplotlib.pyplot as plt
     import ipywidgets as widgets
     try:
-        from module_avac import plot_topo, fn_h
+        from module_avac import raster_plot_topo, fn_h
     except ImportError:
         import sys
         sys.path.insert(0, str(Path(topo_dir).parent / "AVAC"))
-        from module_avac import plot_topo, fn_h
+        from module_avac import raster_plot_topo, fn_h
 
     topo_dir  = Path(config_total['répertoires']['topo_dir'])
     avac_dir  = Path(config_total['répertoires']['avac_dir'])
@@ -1924,8 +1924,8 @@ def init_plot_avalanche(config_total, topo_file, polyligne:LineString, margin=50
 
     fig.canvas.header_visible = False
 
-    _, ax_w, x0, y0 = plot_topo(topo_file, ax=ax_w, step=step)
-    _, ax_a, x0, y0 = plot_topo(topo_file, ax=ax_a, step=step)
+    _, ax_w, x0, y0 = raster_plot_topo(topo_file, ax=ax_w, step=step)
+    _, ax_a, x0, y0 = raster_plot_topo(topo_file, ax=ax_a, step=step)
 
     for ax in (ax_w, ax_a):
         ax.add_patch(plt.Rectangle((xmin-x0, ymin-y0), xmax-xmin, ymax-ymin,

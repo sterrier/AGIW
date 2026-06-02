@@ -101,7 +101,7 @@ def animation(outdir    = "_output",
         bathy.texture_map_to_plane(origin=o, point_u=u, point_v=v, inplace=True)
         scalars=None
     else:
-        # Hillshade calculé depuis B, mêmes paramètres que plot_topo de module_avac
+        # Hillshade calculé depuis B, mêmes paramètres que raster_plot_topo de module_avac
         # X a la forme (nx, ny) → B.T donne (ny, nx) = (lignes=y, colonnes=x) pour hillshade()
         ls  = mcolors.LightSource(azdeg=315, altdeg=45)
         dx  = float(X[1, 0] - X[0, 0])

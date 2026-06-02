@@ -45,7 +45,7 @@ gauges:
     - 965780.0
     - 6536190.0
 output:
-  Language: French
+  language: French
   delta_t: 1
   output_directory: _output300
   output_format: binary32

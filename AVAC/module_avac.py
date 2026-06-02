@@ -3,7 +3,7 @@
 # C. Ancey
 # Adapted Stéphane Terrier May-June 2026
 
-from    clawpack.geoclaw    import topotools as topo  # type: ignore
+from    clawpack.geoclaw    import topotools  # type: ignore
 import  geopandas as gp
 from    linecache           import getline
 import  numpy as np
@@ -15,6 +15,7 @@ import  shutil
 import  subprocess
 import  sys
 import  tarfile
+import  warnings
 import  yaml
 
 
@@ -22,6 +23,7 @@ import  yaml
 # AVAC #
 ########
 
+# get_version_from_file
 def avac_get_version_from_file(file_path):
     """Extract the version from a file if it exists in the working directory."""
     # Regular expression to extract filename & version number
@@ -36,6 +38,7 @@ def avac_get_version_from_file(file_path):
         pass  # Ignore errors
     return None, None
 
+# install_avac
 def avac_install(**kwargs):
     """ 
     This function extracts the files required by AVAC
@@ -59,7 +62,7 @@ def avac_install(**kwargs):
     archive = kwargs.get('archive', 'files.tar.gz')
     verbosity = kwargs.get('verbosity', False)
       
-    #extract_path = '.'  # Extract to current directory
+    # extract_path = '.'  # Extract to current directory
     if not os.path.isfile(archive): 
         print(f"Installation impossible. Archive {archive} is missing.")
         print(f"Stopped...")
@@ -107,7 +110,306 @@ def avac_install(**kwargs):
                             with open(file_path, "wb") as f_out:
                                 f_out.write((first_line + "\n").encode())  # Restore first line
                                 f_out.write(remaining_content)  # Write the rest
+
     print(f"=> You are using AVAC version {avac_get_version_from_file('Makefile')[1]}.")
+
+# import_configuration_files
+def avac_parameters_import(file_name):
+    """
+    import the configuration and check consistency
+    output: a dictionary with AVAC parameters
+    the script can pinpoint potential errors in the parameters
+    """
+
+    def is_genuine_int(var):
+        return isinstance(var, int) and not isinstance(var, bool)    
+
+    def is_integer(key_1, key_2) -> int:
+        """check whether avac_parameters[key_1][key_2] is integer"""
+        var = avac_parameters[key_1][key_2]
+        if not is_genuine_int(var):
+            print(f"The variable {key_1}.{key_2} must be an integer! Here, I get {key_1}.{key_2} = {var}")
+            return 1
+        else:
+            return 0
+
+    def is_boolean(key_1, key_2) -> int:
+        """checks whether avac_parameters[key_1][key_2] is boolean"""
+        var = avac_parameters[key_1][key_2]
+        if not isinstance(var, bool):
+            print(f"The variable {key_1}.{key_2} must be a Boolean! Here, I get {key_1}.{key_2} = {var}")
+            return 1
+        else:
+            return 0
+
+    print(f"Opening the configuration file {file_name}...")
+
+    with open(file_name, 'r') as file:
+        avac_parameters = yaml.safe_load(file)
+
+    topo_source = avac_parameters['topography']['topo_source']
+    topo_dir    = avac_parameters['computation']['topo_dir']
+
+    keys_avac          = [
+                            'animation',
+                            'computation',
+                            'date',
+                            'objects',
+                            'output',
+                            'release',
+                            'rheology',
+                            'topography',
+                            ]
+    keys_animation     = [
+                            'n_out',            # number of frames
+                            'variable',         # what property to animate
+                            ]
+    keys_comput_real   = [
+                            'boundary',
+                            'cell_size',
+                            'cfl_max',
+                            'cfl_target',
+                            'dry_limit',
+                            'max_iter',
+                            'nb_simul',
+                            'output_directory',
+                            'refinement',
+                            't_max',
+                            'topo_dir',
+                            ]
+    keys_comput_virtual= [
+                            'boundary',
+                            'boundary_east',
+                            'boundary_north',
+                            'boundary_south',
+                            'boundary_west',
+                            'cell_size',
+                            'cfl_max',
+                            'cfl_target',
+                            'dry_limit',
+                            'dx',
+                            'dy',
+                            'force_stop',
+                            'limiter',
+                            'mass_frac_stop',
+                            'max_iter',
+                            'nb_simul',
+                            'output_directory',
+                            'refinement',
+                            't_max',
+                            'track_mass',
+                            'xlower',
+                            'xupper',
+                            'ylower',
+                            'yupper',
+                            ]
+    keys_computation   = keys_comput_real if topo_source == 'real_world' else keys_comput_virtual
+    keys_objects       = ['line']
+    keys_output        = [
+                            'delta_t',
+                            'language',
+                            'output_format',
+                            'verbosity',
+                            ]
+    keys_release       = [
+                            'correction_elevation',
+                            'correction_slope',
+                            'd0',
+                            'gradient_hypso',
+                            'nu',
+                            'period_return',
+                            'theta_cr',
+                            'z_ref',
+                            ]
+    keys_rheology      = [
+                            'beta',
+                            'model',
+                            'mu',
+                            'rho',
+                            'u_cr',
+                            'xi',
+                            ]
+    keys_topography    = [
+                            'dem',
+                            'finer_dem',
+                            'starting_areas',
+                            'topo_refinement',
+                            'topo_source',
+                            ]
+    
+    animation_formats  = ['depth', 'pressure', 'velocity']
+    rheological_models = ['Coulomb', 'Voellmy']
+    output_formats     = ['ascii', 'binary32', 'binary64']
+    output_languages   = ['English', 'French']
+    verbosity_formats  = [0, 1, 2, 3, 4]  # see https://www.clawpack.org/pyclaw/output.html
+    boundary_formats   = ['extrap', 'user', 'wall']
+
+
+    # Check categories
+    error = 0
+    error += dict_test_keys(avac_parameters, keys_avac)  # check whether the config file keys are those expected
+
+    print()
+
+    # Checks animation
+    print("Cheking animation...")
+    error += dict_test_keys(avac_parameters['animation'], keys_animation)
+    error += is_integer('animation', 'n_out')
+    if avac_parameters['animation']['variable'] not in animation_formats:
+        print(f"* The variable {avac_parameters['animation']['variable'] } for animation is unknown!")
+        print(f"* The only current possibilities are: 'depth', 'pressure' or 'velocity'.")
+
+    # Checks computation parameters
+    print("Cheking computation...")
+    error += dict_test_keys(avac_parameters['computation'], keys_computation)
+    error += is_integer('computation', 'max_iter')
+    error += is_integer('computation', 'nb_simul')
+    error += is_integer('computation', 'refinement')
+    if avac_parameters['computation']['cfl_max'] > 1 or avac_parameters['computation']['cfl_max'] < 0:
+        print(f"Check variable cfl_max = {avac_parameters['computation']['cfl_max']}")
+        print(f"This value should be an integer in the 0.1-1 range.")
+        error += 1
+    if avac_parameters['computation']['cfl_target'] > avac_parameters['computation']['cfl_max']:
+        print(f"Check variable cfl_target = {avac_parameters['computation']['cfl_max']}")
+        print(f"This value cannot be larger car cfl_max = {avac_parameters['computation']['cfl_max']}.")
+        error += 1
+    if avac_parameters['computation']['refinement'] < 1 or avac_parameters['computation']['refinement'] > 6:
+        print(f"Check variable refinement = {avac_parameters['computation']['refinement']}.")
+        print(f"This value should be an integer in the 1-6 range.")
+    if topo_source == 'real_world':
+        if avac_parameters['computation']['boundary'] not in boundary_formats:
+            print(f"The boundary condition {avac_parameters['computation']['boundary'] } is unknown!")
+            print("The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
+        if avac_parameters['computation']['boundary'] == 'user':
+            print("This is not implemented by default. Check file bc2.f90.")
+    else:
+        if avac_parameters['computation']['boundary_south'] not in boundary_formats:
+            print(f"The boundary condition {avac_parameters['computation']['boundary_south'] } is unknown!")
+            print("The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
+        if avac_parameters['computation']['boundary_south'] == 'user':
+            print("This is not implemented by default. Check file bc2.f90.")
+
+    # Checks output
+    print("Cheking output...")
+    error += dict_test_keys(avac_parameters['output'], keys_output)
+    error += is_integer('output', 'verbosity')
+    if avac_parameters['output']['delta_t'] > avac_parameters['computation']['t_max']:
+        print(f"* The parameter delta_t is set to {avac_parameters['output']['delta_t'] }.")
+        print(f"* It is larger to t_max = {avac_parameters['computation']['t_max'] }!")
+        print(f"* I correct it. Check!")
+        avac_parameters['output']['delta_t'] = avac_parameters['computation']['t_max']
+    if avac_parameters['output']['language'] not in output_languages:
+        print(f"* The language {avac_parameters['output']['language'] } is unknown!")
+        print(f"* The only current possibilities are: 'English' or 'French'.")
+    if avac_parameters['output']['output_format'] not in output_formats:
+        print(f"* The output format {avac_parameters['output']['output_format'] } is unknown!")
+        print(f"* The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
+    if avac_parameters['output']['verbosity'] not in verbosity_formats:
+        print(f"* The verbosity parameter is set to {avac_parameters['output']['verbosity'] }.")
+        print(f"* It should range from 0 to 4.")
+
+    # Checks release parameters
+    print("Cheking release...")
+    error += dict_test_keys(avac_parameters['release'], keys_release)
+    error += is_boolean('release', 'correction_elevation')
+    error += is_boolean('release', 'correction_slope')
+    if avac_parameters['release']['gradient_hypso'] < 0 or avac_parameters['release']['gradient_hypso'] > 0.2:
+        print(f"* Check variable gradient_hypso = {avac_parameters['release']['gradient_hypso']}.")
+        print(f"* This value cannot be negative or larger than 20 cm/100 m.")
+        error += 1
+    if avac_parameters['release']['z_ref'] < 0 or avac_parameters['release']['z_ref'] > 9000:
+        print(f"* Check variable z_ref = {avac_parameters['release']['z_ref']}.")
+        print(f"* This value cannot be negative or larger than 9000 m.")
+        error += 1
+    if avac_parameters['release']['theta_cr'] < 5 or avac_parameters['release']['theta_cr'] > 50:
+        print(f"* Check variable theta_cr = {avac_parameters['release']['theta_cr']}.")
+        print(f"* This value should be expressed in degrees and close to 30.")
+        error += 1
+
+    # Checks rheology parameters
+    print("Cheking rheology...")
+    error += dict_test_keys(avac_parameters['rheology'], keys_rheology)
+    if avac_parameters['rheology']['beta'] < 0 or avac_parameters['rheology']['u_cr'] > 1.5:
+        print(f"* Check variable beta = {avac_parameters['rheology']['beta']}.")
+        print(f"* This value should be in the 0-1.5 range.")
+        error += 1
+    if avac_parameters['rheology']['model'] not in rheological_models:
+        print(f"* The rheological model {avac_parameters['rheology']['model'] } is unknown!")
+        print(f"* The only current possibilities are: 'Coulomb' or 'Voellmy'.")
+    if avac_parameters['rheology']['mu'] < 0.05 or avac_parameters['rheology']['mu'] > 0.5:
+        print(f"* Check variable mu = {avac_parameters['rheology']['mu']}.")
+        print(f"* This value should be in the 0.05-0.5 range.")
+        error += 1
+    if avac_parameters['rheology']['rho'] < 100 or avac_parameters['rheology']['rho'] > 1000:
+        print(f"* Check variable rho = {avac_parameters['rheology']['rho']}.")
+        print(f"* This value should be in the 100-1000 range.")
+        error += 1
+    if avac_parameters['rheology']['u_cr'] < 0 or avac_parameters['rheology']['u_cr'] > 0.5:
+        print(f"* Check variable u_cr = {avac_parameters['rheology']['u_cr']}.")
+        print(f"* This value should be in the 0-0.5 range.")
+        error += 1
+    if avac_parameters['rheology']['xi'] < 100 or avac_parameters['rheology']['xi'] > 1e4:
+        print(f"* Check variable xi = {avac_parameters['rheology']['xi']}.")
+        print(f"* This value should be in the 100-10,000 range.")
+
+    # Checks topography
+    print("Cheking topography...")
+    error += dict_test_keys(avac_parameters['topography'], keys_topography)
+    file_path = Path(topo_dir) / avac_parameters['topography']['dem']
+    topo_refinement = avac_parameters['topography']['topo_refinement']
+    if file_path.exists():
+        print(f"* I found the DEM file {file_path}.")
+    test_success = [bool(chain) for chain in raster_read_features(file_path)[8]]
+    if np.all(np.array(test_success)):
+        # print("* File import raises no issue.")
+        pass
+    else:
+        print(f"* When importing file {avac_parameters['topography']['dem']} from {topo_dir}, I found errors in the header. Please check.")
+        error += 1
+    if topo_refinement:
+        fine_topo_path = Path(topo_dir) / avac_parameters['topography']['finer_dem']
+        if fine_topo_path.exists():
+            print(f"* Finer topography: I found the DEM file {fine_topo_path} in the directory {topo_dir}.")
+        test_success = [bool(chain) for chain in raster_read_features(fine_topo_path)[8]]
+        if np.all(np.array(test_success)):
+            print(f"* File import raises no issue.")
+        else:
+            print(f"* When importing file {avac_parameters['topography']['finer_dem']}, I found errors in the header. Please check.")
+            error += 1
+    file_path = avac_parameters['topography']['starting_areas']
+    if file_path is None:
+        print("* No starting areas shapefile specified (starting_areas is null).")
+    else:
+        file_path = Path(topo_dir) / file_path
+        if file_path.exists():
+            print(f"* I found the shapefile {file_path} containing the starting areas.")
+            # print(f"  It seems ok.")
+        else:
+            print(f"* I failed to import {file_path}! Please check.")
+            error += 1
+        file_path = avac_parameters['topography']['starting_areas'][:-3]+'shx'
+        file_path = Path(topo_dir) / file_path
+        if not file_path.exists():
+            print(f"* File {file_path} is missing! Please check. ")
+            print(f"  This file accompanies the shapefile. Find it or reconstruct it using gdal.")
+            error +=1
+
+    print()
+    if error>0:
+        print(f"Error(s) detected: {error}")
+    else:
+        print("Everything looks fine so far.")
+    print()
+
+    # Flatten the configuration dictionary
+    flat_configuration = dict_flatten(avac_parameters)
+
+    # print("Configuration file:")
+    for key, value in flat_configuration.items():
+        var_name = key.replace('.', '_')
+        globals()[var_name] = value
+        # print(f"* {var_name} = {value}")
+    return avac_parameters
 
 def avac_reload(folder=None):
     """
@@ -120,7 +422,8 @@ def avac_reload(folder=None):
         * module or None. The reloaded module or None in case of error
 
     """
-    import importlib
+    # import importlib
+    import importlib.util
     import os
 
     # Chemin explicite
@@ -143,8 +446,11 @@ def avac_reload(folder=None):
         
         # Méthode 1: if module has not been imported
         if 'module_avac' not in sys.modules:
-            spec = util.spec_from_file_location("module_avac", module_path)
-            module = util.module_from_spec(spec)
+            spec = importlib.util.spec_from_file_location("module_avac", module_path)
+            if spec is None or spec.loader is None:
+                print(f"Error: Could not load spec for {module_path}")
+                return None
+            module = importlib.util.module_from_spec(spec)
             sys.modules["module_avac"] = module
             spec.loader.exec_module(module)
             print("Module imported for the first time.")
@@ -162,6 +468,9 @@ def avac_reload(folder=None):
             
             # Reimporter complètement
             spec = importlib.util.spec_from_file_location("module_avac", module_path)
+            if spec is None or spec.loader is None:
+                print(f"Error: Could not load spec for reloading {module_path}")
+                return None
             module = importlib.util.module_from_spec(spec)
             sys.modules["module_avac"] = module
             spec.loader.exec_module(module)
@@ -177,31 +486,693 @@ def avac_reload(folder=None):
         return None
 
 
-#####################
-# various functions #
-#####################
-def find_nearest(array, value):
-    array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return idx
+############
+# Clawpack #
+############
 
-# Function to flatten a nested dictionary
-def flatten_dict(d, parent_key='', sep='.'):
+# check_claw
+def claw_check_installation():
+    """ 
+    Test if clawpack is installed. If so, it returns the CLAW path
     """
-    flattens the original (nested) dictionary of variables
+
+    CLAW = os.environ['CLAW']
+    home = expanduser("~")
+    if CLAW=='':
+        claw = False
+        with open(home + '/.bashrc') as f:
+            datafile = f.readlines()
+        for line in datafile:
+            s = "CLAW"
+            if s in line and line.find('#') == -1:
+                claw=(str.split(line))[1]
+                claw = home+claw.replace("CLAW=$HOME", "")
+                return claw
+        if not claw:
+            print("Error: I cannot determine the $CLAW variable...")
+            print("Please modify the script and define it explicitely")
+            return claw
+    else:
+        return CLAW
+
+# check_version
+def claw_check_version(claw):
+    claw_setup = claw + "/setup.py"
+
+    # Open the file
+    with open(claw_setup, "r") as file:
+        # Initialize variables to store MAJOR and MINOR values
+        major_value = None
+        minor_value = None
+
+        # Iterate through each line in the file
+        for line in file:
+            # Strip leading/trailing whitespace
+            line = line.strip()
+
+            # Check if the line starts with "MAJOR" and contains "="
+            if line.startswith("MAJOR") and "=" in line:
+                # Split the line by "=" and extract the value
+                parts = line.split("=")
+                if len(parts) == 2:                      # Ensure the line is properly formatted
+                    major_value = int(parts[1].strip())  # Extract and convert to integer
+
+            # Check if the line starts with "MINOR" and contains "="
+            elif line.startswith("MINOR") and "=" in line:
+                parts = line.split("=")
+                if len(parts) == 2:
+                    minor_value = int(parts[1].strip())
+
+    return [major_value, minor_value]
+
+
+##########
+# Raster #
+##########
+
+# check_raster
+def raster_check(filepath):
+    """
+    checks whether 'file' is a raster file
+    Output: True if the file is a raster (or no error has been pinpointed)
+            False if import raises problems
+    """
+
+    print(f"Raster file: {filepath}")
+
+    print()
+    if os.path.isfile(filepath):
+        print(f"File {filepath} exists in the working directory.")
+
+    print()
+    xmin, xmax, ymin, ymax, nbx, nby, cell_size, dico, failure, remarks, grid_type = raster_read_features(filepath)
+    raster_features = [['xmin',xmin],['xmax',xmax],['ymin',ymin],['ymax',ymax],['nbx',nbx],['nby',nby],['cell size',cell_size]]
+
+    # Check if all strings are empty
+    test_all_remark_empty   = np.all(remarks == '')
+    test_all_success_import = np.all(failure == 'True')
+    if test_all_remark_empty and test_all_success_import:
+        print("No problem detected in the raster file")
+    elif test_all_success_import:
+        # some problems detected
+        non_empty_remark = remarks[remarks != '']
+        print(f"I detected {len(non_empty_remark )} potential problem(s):")
+        for rmk in non_empty_remark:
+            print("* ", rmk)
+    else:
+        print("Check your file! I am not able to import it as a raster file.")
+    raster_type = raster_determine_file_type(filepath)
+
+    print()
+    print('Raster features')
+    print(f"* The raster format is: {raster_type}.")   
+    print(f"* The grid type is: {grid_type}.")      
+
+    # Format the numbers in raster_features
+    formatted_raster_features = format_numbers(raster_features)
+
+    # Calculate column widths
+    col_width_feature = max(len(row[0]) for row in formatted_raster_features)
+    col_width_value = max(len(row[1]) for row in formatted_raster_features)
+
+    # Print the table with custom formatting
+    # Print headers
+    print()
+    print("-" * (col_width_feature + col_width_value + 3))
+    print(f"{'Feature':<{col_width_feature}} {'Value':>{col_width_value}}")
+    print("-" * (col_width_feature + col_width_value + 3))
+
+    # Print rows
+    for feature, value in formatted_raster_features:
+        print(f"{feature:<{col_width_feature}} {value:>{col_width_value}}")
+
+    if test_all_success_import: 
+        return True
+    else:
+        return False
+
+# determine_file_type
+def raster_determine_file_type(file):
+    """ 
+    Goal: determining the nature of a raster file
+    Input: raster *.brage.asc
+    Output: the file type (grass, esri or claw format)
+    """
+    try:
+        with open(file, "r") as f:
+            text = f.readline().strip()
+
+        # Regular expression to find the first number
+        # number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
+        # Search for the first number
+        # number_match = re.search(number_pattern, text)
+        # Search for the first word
+        # Regular expression to find the first word
+        word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only)
+        word_match = re.search(word_pattern, text)
+        type_file = 'esri'
+
+        if word_match:
+            start_position = word_match.start() 
+            word = word_match.group()
+            if start_position == 0:
+                type_file = 'esri'
+            else:
+                type_file = 'claw'
+
+            if word in ['north', 'south', 'east', 'west']:
+                type_file = 'grass'
+
+        if type_file in ['claw', 'esri', 'grass']:
+            return type_file
+        else:
+            print(f'Error!I cannot determine the type of the file {file}.')
+
+    except FileNotFoundError:
+        print(f"The file '{file}' does not exist.")
+
+# count_header_lines
+def raster_header_count_lines(filepath, num_lines = 10):
+    """
+    dertermines the header size of the raster file, i.e.
+    the number of lines with alphanumeric information
+    Input: file name
+    Output: number of lines
+    """
+
+    count = 0
+    for i in range(1, num_lines + 1):  # Les lignes dans linecache commencent à 1
+        line = getline(filepath, i).strip()  # Supprime espaces et \n
+        
+        # Supprime les nombres (y compris en notation scientifique) au début de la ligne
+        cleaned_line = re.sub(r'^[\s\d\.\-+eE]+', '', line).strip()
+
+        # Vérifie s'il reste au moins une lettre dans la ligne
+        if re.search(r'[a-zA-Z]', cleaned_line):
+            count += 1
+
+    return count
+
+def raster_parse_header(source):
+    """
+    Parse header and compute spatial extent. Returns all shared metadata.
+
+    Examples
+    --------
+    ESRI node:
+        ncols         500
+        nrows         400
+        xllcenter     965001.0
+        yllcenter     6535001.0
+        cellsize      2.0
+        nodata_value  -9999
+    ESRI cell:
+        ncols         500
+        nrows         400
+        xllcorner     965000.0
+        yllcorner     6535000.0
+        cellsize      2.0
+        nodata_value  -9999
+    GRASS
+        north:  6537000.0
+        south:  6535000.0
+        east:   966000.0
+        west:   965000.0
+        rows:   400
+        cols:   500
+    Clawpack:
+        500                             ncols
+        400                             nrows
+        9.65000000000000000e+05         xlower
+        6.53500000000000000e+06         ylower
+        2.00000000000000000e+00         cellsize
+        -9999                           nodata_value
+    """
+
+    source              = str(source)
+    header_size         = raster_header_count_lines(source, num_lines=10)
+    header              = [getline(source, i) for i in range(1, header_size + 1)]
+    type_file           = raster_determine_file_type(source)
+
+    header_extraction   = np.array([extract_values(string) for string in header])
+    failure             = header_extraction[:, 0]
+    values              = [float(val) for val in header_extraction[:, 1]]
+    keys                = header_extraction[:, 2]
+    remarks             = header_extraction[:, 3]
+
+    grid_type = 'node' if 'xllcenter' in keys else 'cell'
+    dictionnaire = {keys[k]: values[k] for k in range(header_size)}
+
+    if type_file == 'claw':
+        nbx       = int(dictionnaire['ncols'])
+        nby       = int(dictionnaire['nrows'])
+        cell_size = dictionnaire['cellsize']
+        ymin      = dictionnaire['ylower']
+        ymax      = ymin + nby * cell_size
+        xmin      = dictionnaire['xlower']
+        xmax      = xmin + nbx * cell_size
+    elif type_file == 'esri' and grid_type == 'cell':
+        nbx       = int(dictionnaire['ncols'])
+        nby       = int(dictionnaire['nrows'])
+        cell_size = dictionnaire['cellsize']
+        ymin      = dictionnaire['yllcorner']
+        ymax      = ymin + (nby - 1) * cell_size
+        xmin      = dictionnaire['xllcorner']
+        xmax      = xmin + (nbx - 1) * cell_size
+    elif type_file == 'esri' and grid_type == 'node':
+        nbx       = int(dictionnaire['ncols'])
+        nby       = int(dictionnaire['nrows'])
+        cell_size = dictionnaire['cellsize']
+        ymin      = dictionnaire['yllcenter'] - cell_size / 2
+        ymax      = ymin + nby * cell_size
+        xmin      = dictionnaire['xllcenter'] - cell_size / 2
+        xmax      = xmin + nbx * cell_size
+    elif type_file == 'grass':
+        ymin      = dictionnaire['south']
+        ymax      = dictionnaire['north']
+        xmin      = dictionnaire['west']
+        xmax      = dictionnaire['east']
+        nbx       = int(dictionnaire['cols'])
+        nby       = int(dictionnaire['rows'])
+        cell_size = (xmax - xmin) / nbx
+    else:
+        raise ValueError(f"Unrecognised file type '{type_file}' or grid_type '{grid_type}'")
+
+    return xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, failure, remarks, grid_type
+
+# plot_topo
+def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval = 20,
+              azdeg = 315, altdeg = 45, grid = 200, ylabel_position = "left", resampling = None):
+    """
+    Draws the topographic background (hillshade + contour lines) on a matplotlib axis.
+
+    If ax is None, create a new figure with dimensions suitable for the raster. The axis ticks should align with multiples of 100 m (absolute coordinates).
+
+    Input:
+        * topo_file        : object returned by raster_read_file (Digital Elevation Model, DEM)
+        * ax               : existing matplotlib axis (optional; if None, a figure is created)
+        * figsize_width    : width of the figure in inches if ax=None (default is 10)
+        * contour_interval : contour line spacing in meters (default is 25)
+        * azdeg, altdeg    : azimuth and elevation of the light source for the hillshade
+        * step             : step between labels, default is 200 m
+        * ylabel_position  : position of the y-labels
+        * resampling       : integer or None. If an integer is given, the DEM is resampled with a step = resampling
+
+    Output:
+        * fig, ax, x0, y0  (where x0, y0: southwest corner of the raster in absolute coordinates)
+    """
+    import  matplotlib.colors as mcolors
+    import  matplotlib.pyplot as plt
+    from    matplotlib.ticker import FuncFormatter
+    import  math
+
+    # Origin and resolution
+    x0 = float(topo_file.x[0])
+    y0 = float(topo_file.y[0])
+    dx = float(topo_file.x[-1] - topo_file.x[0])
+    dy = float(topo_file.y[-1] - topo_file.y[0])
+
+    # Create figure if not passed as argument
+    if ax is None:
+        w = figsize_width
+        h = round(w * dy / dx, 2)
+        fig, ax = plt.subplots(figsize = (w, h), layout = 'constrained')
+        try:
+            if hasattr(fig.canvas, 'header_visible'):
+                setattr(fig.canvas, 'header_visible', False)  # ipympl uniquement
+        except AttributeError:
+            pass
+    else:
+        fig = ax.figure
+
+    # Relative coordinates
+    Z = topo_file.Z
+    nrows, ncols = Z.shape
+    if ncols != len(topo_file.x) or nrows != len(topo_file.y):
+        warnings.warn(
+            f"Z.shape ({nrows}, {ncols}) does not match "
+            f"len(x)={len(topo_file.x)}, len(y)={len(topo_file.y)}. "
+            "Recomputing coordinate arrays from Z.shape — check your topo object.",
+            stacklevel = 2
+        )
+        # Z a été rééchantillonné sans mettre à jour x/y : on recalcule la grille depuis Z.shape
+        x_rel = np.linspace(0, float(topo_file.x[-1] - topo_file.x[0]), ncols)
+        y_rel = np.linspace(0, float(topo_file.y[-1] - topo_file.y[0]), nrows)
+    else:
+        x_rel = topo_file.x - x0
+        y_rel = topo_file.y - y0
+    XX, YY = np.meshgrid(x_rel, y_rel)
+
+    # Hillshade
+    ls = mcolors.LightSource(azdeg = azdeg, altdeg = altdeg)
+    cell_size = float(x_rel[1] - x_rel[0])
+    hs = ls.hillshade(Z, vert_exag = 2, dx = cell_size, dy = cell_size)
+    if resampling is None:
+        ax.pcolormesh(XX, YY, hs, cmap = "gray", shading = "auto", alpha = 0.8)
+    else:
+        ax.pcolormesh(XX[::resampling,::resampling], YY[::resampling,::resampling], hs[::resampling,::resampling], cmap = "gray", shading = "auto", alpha = 0.8)
+
+    # Contours
+    zmin_c = int(np.nanmin(Z) // contour_interval) * contour_interval
+    zmax_c = int(np.nanmax(Z) // contour_interval + 1) * contour_interval
+    levels_minor = np.arange(zmin_c, zmax_c, contour_interval)
+    levels_major = np.arange(zmin_c, zmax_c, contour_interval * 5)
+    ax.contour(XX, YY, Z, levels = levels_minor, colors = "k", linewidths = 0.4, alpha = 0.5)
+    cs = ax.contour(XX, YY, Z, levels = levels_major, colors = "k", linewidths = 0.9, alpha = 0.8)
+    ax.clabel(cs, fmt="%d m", fontsize = 7, inline = True)
+
+    ax.set_aspect("equal")
+
+    # Ticks
+    x_ticks = np.arange(math.ceil(x0 / grid) * grid, x0 + dx + grid, grid) - x0
+    y_ticks = np.arange(math.ceil(y0 / grid) * grid, y0 + dy + grid, grid) - y0
+    x_ticks = x_ticks[(x_ticks >= 0) & (x_ticks <= dx)]
+    y_ticks = y_ticks[(y_ticks >= 0) & (y_ticks <= dy)]
+    ax.set_xticks(x_ticks)
+    ax.set_yticks(y_ticks)
+
+    # Axes, labels and gridlines
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v + x0:.0f}"))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v + y0:.0f}"))
+    if ylabel_position == 'right':
+        ax.yaxis.tick_right()
+        ax.yaxis.set_label_position("right")    
+    else:
+        ax.yaxis.tick_left()
+        ax.yaxis.set_label_position("left") 
+    ax.tick_params(axis = "y", labelrotation = 90)
+    ax.set_xlabel(r"$x$  [m]")
+    ax.set_ylabel(r"$y$  [m]")
+    ax.grid(linewidth = 0.7, alpha = 0.85)
+
+    return fig, ax, x0, y0
+
+# reading_raster_file_features
+def raster_read_features(source): 
+    '''
+    Read raster data from source. The source uses ASCII Grass format (based on cardinal directions). The 
+    function extracts information from the header
+    For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
+    input: raster file
+    output: xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary, failure, remarks
+    '''
+
+    xmin, xmax, ymin, ymax, nbx, nby, cell_size, _, failure, remarks, grid_type = raster_parse_header(source)
+    dictionary_extent = {
+                        'xmin':         xmin,
+                        'xmax':         xmax,
+                        'ymin':         ymin,
+                        'ymax':         ymax,
+                        'nbx':          nbx,
+                        'nby':          nby,
+                        'cell_size':    cell_size,
+                        'nodata_value': -9999,
+                        }
+
+    return xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary_extent, failure, remarks, grid_type 
+
+# reading_raster_file
+def raster_read_file(source, nan_replace = False): 
+    '''
+    Read raw data from source. The source uses ASCII Grass format (based on cardinal directions). The 
+    function does some work to read and convert these data
+    into a format compatible with clawpack
+    For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
+    '''
+    source = str(source)
+    xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, _, _, _ = raster_parse_header(source)
+    tab = np.genfromtxt(source, skip_header = header_size, missing_values = '*' ) 
+    if nan_replace:
+        tab = np.nan_to_num(tab, nan = -9999)
+
+    x = np.linspace(xmin, xmax, nbx)
+    y = np.linspace(ymin, ymax, nby)
+    X_fine_grid, Y_fine_grid = np.meshgrid(x, y)
+
+    init = topotools.Topography()
+    init.X = X_fine_grid
+    init.Y = Y_fine_grid 
+    init.Z = tab[::-1, :]
+    init.y = Y_fine_grid[:, 0]
+    init.x = X_fine_grid[0, :]
+    return init
+
+
+#############
+# Shapefile #
+#############
+
+# import_initial_condition
+def shapefile_import_initial_condition(file):
+    """"
+    imports the starting-area shapefile.
+    input: file name
+    output: geopandas frame (set of polygons), number of polygons
+    """
+    areas = gp.read_file(file)
+    nb_areas = len(areas)
+    print(f"There are {nb_areas} starting area(s) in the file {file}.")
+
+    # determine the CRS of the GeoDataFrame
+    crs = areas.crs
+
+    # Print the CRS information
+    print("Coordinate Reference System (CRS) of the shapefile:", crs)
+
+    # Extract the EPSG code (if available)
+    if crs is not None:
+        epsg_code = crs.to_epsg()
+        if epsg_code is not None:
+            print("EPSG code of the shapefile:", epsg_code)
+        else:
+            print("The CRS does not have an EPSG code, or it is not recognized.")
+    else:
+        print("The shapefile does not have a defined CRS.")
+    return areas, nb_areas 
+
+# import_polylines
+def shapefile_import_polylines(file = 'profil.shp', language = 'English'):
+    """ import a polyline and describes its features.
+    Input:
+        * file: name of the shapefile
+    Output:
+        * ligne: geopandas object
+        * coords_array: coordinates of the points
+    """
+    import geopandas as gp
+
+    # Read the shapefile
+    ligne = gp.read_file(file)
+
+    # Messages
+    # text1 below
+    # text2 below
+    text3 = {'English':f"Consider providing a shapefile with a single polyline...",
+             'French': f"Il faut fournir un shapfile avec une seule polyligne !"}
+    text4 = {'English':f"Coordinates array shape:",
+             'French': f"Dimensions du vecteur (array) des coordonnées : "}
+    text5 = {'English':f"Error... No data found!",
+             'French': f"Erreur... Pas de données !"}
+
+    # Extract coordinates from the geometry
+    coords_array = None
+    if len(ligne) > 0:
+        # Get the first (and probably only) geometry
+        geometry = ligne.geometry.iloc[0]
+        geom_type = getattr(geometry, 'geom_type', None)
+
+        # Extract coordinates
+        coords = []
+        if geom_type == 'LineString':
+            coords = np.array(geometry.coords)  # pyright: ignore[reportAttributeAccessIssue]
+            text1 = {'English':f"I import a LineString object with {len(coords)} points",
+                     'French': f"J'importe la polyline composée de {len(coords)} points"}
+            print(text1[language])
+            for i in range(len(coords)): print(f"Point {i}: Coordinates x = {coords[i,0]:.1f} m and y = {coords[i,1]:.1f} m")
+
+        elif geom_type == 'MultiLineString':
+            # For MultiLineString, we will have trouble...
+            coords = []
+            for line in geometry.geoms:  # pyright: ignore[reportAttributeAccessIssue]
+                coords.extend(list(line.coords))
+            text2 = {'English':f"I found a MultiLineString with {len(coords)} as the total number of points.",
+                     'French': f"J'ai trouvé un objet MultiLineString composé en tout de {len(coords)} points"}
+            print(text2[language])
+            print(text3[language])
+
+        # Convert to numpy array for easier manipulation
+        coords_array = np.array(coords)
+        print(text4[language], coords_array.shape)
+    else:
+        print(text5[language])
+
+    return ligne, coords_array
+
+
+#####################
+# Various functions #
+#####################
+
+def correctingFactor1(s, theta, nu):
+    """
+    De Quervain's correction of d_0
+    Input: 
+        * s: local slope, 
+        * theta = critical slope (deg), 
+        * nu: de Quervain's coefficient
+    Output: correction as multiplying factor
+    """
+
+    theta_rad = np.deg2rad(theta) # conversion to radians
+    q         = np.arctan(s)      # conversion from slope to angle (radians)
+
+    if q > np.deg2rad(25):
+       return (np.sin(theta_rad) - nu * np.cos(theta_rad)) / (np.sin(q) - nu * np.cos(q))
+    else:
+       return 0
+
+def correctingFactor2(z, zref, gradient_hypso):
+    """
+    Burkard's correction of d_0
+    Input: local elevation, zref: elevation of the measurement station
+           gradient_hypso: hypsometric gradient (additional snow [m] quantity per 100-m altitude range)
+    Output: correction
+    """
+
+    return (z - zref) * gradient_hypso / 100
+
+def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points = 1000):
+    """
+    Create a cross-section along a polyline. Originally made for plotting DEM cross-sections, but it works
+    for other two-dimensional data.
+    
+    Input:
+        * dem: masked array of DEM
+        * x_coords: x coordinates of DEM grid
+        * y_coords: y coordinates of DEM grid
+        * profile_coords: array of (x,y) coordinates along the profile
+        * num_points: number of points to sample along the profile
+    Output:
+        * sampling_distances: distane from the origin point
+        * elevations: array of elevation along the polyline
+        * sampled_points: coordinates of points (if needed)
+    """
+
+    from scipy.interpolate import RegularGridInterpolator
+    from scipy.spatial.distance import cdist
+
+    # Create interpolator for DEM
+    # Use np.ma.filled so that masked cells become NaN rather than being
+    # interpolated from the raw fill value (-2e99 for fgmax never-wet cells).
+    dem_data = np.ma.filled(dem, np.nan) if np.ma.is_masked(dem) else np.asarray(dem)
+    interp = RegularGridInterpolator((y_coords, x_coords), dem_data, bounds_error = False, fill_value = np.nan)
+    
+    # Calculate cumulative distance along the profile
+    profile_coords = np.array(profile_coords)
+    segments = np.diff(profile_coords, axis = 0)
+    segment_lengths = np.sqrt(np.sum(segments**2, axis = 1))
+    cumulative_distances = np.insert(np.cumsum(segment_lengths), 0, 0)
+    total_length = cumulative_distances[-1]
+    
+    # Create sampling distances along the entire profile
+    sampling_distances = np.linspace(0, total_length, num_points)
+    
+    # Interpolate points along the entire profile
+    sampled_points = []
+    for dist in sampling_distances:
+        # Find which segment this distance falls into
+        segment_idx = np.searchsorted(cumulative_distances, dist, side='right') - 1
+        segment_idx = min(segment_idx, len(segments) - 1)
+        
+        # Calculate position within the segment
+        segment_start_dist = cumulative_distances[segment_idx]
+        segment_progress = dist - segment_start_dist
+        segment_frac = segment_progress / segment_lengths[segment_idx]
+        
+        # Interpolate coordinates
+        start_point = profile_coords[segment_idx]
+        end_point = profile_coords[segment_idx + 1]
+        point = start_point + segment_frac * (end_point - start_point)
+        sampled_points.append(point)
+    
+    sampled_points = np.array(sampled_points)
+    
+    # Extract elevations at sampled points
+    elevations = interp(sampled_points[:, [1, 0]])  # Note: y,x order for RegularGridInterpolator
+    
+    return sampling_distances, elevations, sampled_points
+
+# flatten_dict
+def dict_flatten(d, parent_key='', sep='.'):
+    """
+    Flattens a nested dictionary into a single-level dictionary.
+
+    Nested keys are concatenated using a specified separator. For example,
+    {'a': {'b': 1}} becomes {'a.b': 1}.
     """
     items = {}
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
-            items.update(flatten_dict(v, new_key, sep=sep))
+            items.update(dict_flatten(v, new_key, sep=sep))
         else:
             items[new_key] = v
     return items
 
+# test_keys
+def dict_test_keys(dictionary_tested, dictionary_ref) -> int:
+    """ 
+    Checks whether all the keys in dictionary_ref are defined in dictionary_tested.
+    """
+
+    # Convert list to dictionnary
+    if not isinstance(dictionary_ref, dict):
+        dictionary_ref = {key: None for key in dictionary_ref}
+
+    if not sorted(list(dictionary_tested.keys()) ) == sorted(list(dictionary_ref.keys())):
+        # print('* The configuration file does not satisfy the requirements.')
+        difference_1 = sorted(set(dictionary_ref.keys()) - set(dictionary_tested.keys()))
+        difference_2 = sorted(set(dictionary_tested.keys()) - set(dictionary_ref.keys()))
+        if len(difference_1) > 0:
+            print(f"* There is missing information. Please check your configuration file. Computation will fail otherwise!")
+            for info in difference_1: print(f"  - Missing key: {info}")
+            return 1
+        if len(difference_2) > 0:
+            print(f"* There is additional information. This information will not be used here.")
+            for info in difference_2: print(f"  - Additional key: {info}")
+            return 0
+        return 0
+    else:
+        return 0
+
+def export_profile(file, distances, elevations, header = False):
+    # export of the profile
+    with open(file, 'w') as f:
+        if header:
+            f.write('distance\televation\n')  # header
+        for dist, elev in zip(distances, elevations):
+            f.write(f'{dist}\t{elev}\n')
+
+def find_nearest(array, value):
+    """
+    Find the index of the element in an array closest to a specified value.
+
+    This function calculates the absolute difference between each element 
+    in the array and the target value, then returns the index of the 
+    minimum difference.
+    """
+
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx
+
 def format_numbers(features):
     """ 
-    Format numbers to two decimal places if they are floats
+    Formats a list of feature name-value pairs for aligned text output.
+
+    Iterates through a list of features, applying specific formatting to 
+    numeric values. Floats are rounded to 2 decimal places, and all 
+    values are right-aligned within a 10-character wide field.
     """
     formatted_features = []
     for feature in features:
@@ -213,57 +1184,23 @@ def format_numbers(features):
         formatted_features.append([name, formatted_value])
     return formatted_features
 
-############
-# Clawpack #
-############
 
-# check if clawpack is installed
-def check_claw():
-    """ 
-    Test if clawpack is installed. If so, it returns the CLAW path
-    """
-    CLAW = os.environ['CLAW']
-    home = expanduser("~")
-    if CLAW=='':
-        claw = False
-        with open(home+'/.bashrc') as f:
-            datafile = f.readlines()
-        for line in datafile:
-            s="CLAW"
-            if s in line and line.find('#')==-1:
-                claw=(str.split(line))[1]
-                claw = home+claw.replace("CLAW=$HOME", "")
-                return claw
-        if not claw:
-            print("Error: I cannot determine the $CLAW variable...")
-            print("Please modify the script and define it explicitely")
-            return claw
-    else:
-        return CLAW
-    
-def check_version(claw):
-    claw_setup = claw+"/setup.py"
-    # Open the file
-    with open(claw_setup, "r") as file:
-        # Initialize variables to store MAJOR and MINOR values
-        major_value = None
-        minor_value = None
-        # Iterate through each line in the file
-        for line in file:
-            # Strip leading/trailing whitespace
-            line = line.strip()
-            # Check if the line starts with "MAJOR" and contains "="
-            if line.startswith("MAJOR") and "=" in line:
-                # Split the line by "=" and extract the value
-                parts = line.split("=")
-                if len(parts) == 2:                      # Ensure the line is properly formatted
-                    major_value = int(parts[1].strip())  # Extract and convert to integer
-            # Check if the line starts with "MINOR" and contains "="
-            elif line.startswith("MINOR") and "=" in line:
-                parts = line.split("=")
-                if len(parts) == 2:   
-                    minor_value = int(parts[1].strip())  #  
-    return [major_value,minor_value]
+###################
+# Post-processing #
+###################
+fn_eta      = lambda q: q[3,:,:]                     # eta = z_b +h
+fn_ground   = lambda q: q[3,:,:] - q[0,:,:]          # z_b
+fn_h        = lambda q: q[0,:,:]                     # h
+fn_husquare = lambda q: q[1,:,:]**2+q[2,:,:]**2      # h²(u²+v²)
+fn_extract  = lambda q: np.array((fn_h(q),fn_eta(q))) # (h, eta)
+fn_hu       = lambda q: q[1,:,:]                     # hu
+fn_hv       = lambda q: q[2,:,:]                     # hv
+fn_u        = lambda q: np.where(q[0,:,:]>0, (q[1,:,:]/q[0,:,:]), 0)  # u
+fn_v        = lambda q: np.where(q[0,:,:]>0, (q[2,:,:]/q[0,:,:]), 0)  # v    
+fn_velocity = lambda q: np.where(q[0,:,:]>0, np.sqrt((q[2,:,:]/q[0,:,:])**2+(q[1,:,:]/q[0,:,:])**2), 0)  # v 
+
+
+# running AVAC
 
 def make_output(avac_p, verbosity=False):
     """
@@ -306,14 +1243,14 @@ def make_output(avac_p, verbosity=False):
 
     print(f"AVAC computation: t = {t_0} → {tmax} s  |  {nb_simul} frames  |  dt = {dt:.1f} s")
     if track_mass:
-        if avac_p['output']['Language']=='French':
+        if avac_p['output']['language']=='French':
             print(f"  Suivi de la masse : oui  |  seuil d'arrêt : {100*mass_frac_stop:.0f} %  |  "
               f"forcer l'arrêt ? {'Oui' if force_stop else 'Non'}")
         else:
             print(f"  Mass tracking: ON  |  stop threshold: {100*mass_frac_stop:.0f} %  |  "
               f"force stop: {'YES' if force_stop else 'no'}")
     else:
-        if avac_p['output']['Language']=='French':
+        if avac_p['output']['language']=='French':
             print("  Suivi de la masse en écoulement : non")
         else:
             print(f"  Mass tracking: off")
@@ -344,7 +1281,7 @@ def make_output(avac_p, verbosity=False):
     # Thread: write stdout to avac.log in real time
     def _log_writer():
         with open("avac.log", "w") as log_file:
-            for line in process.stdout:
+            for line in (process.stdout or []):
                 log_file.write(line)
                 log_file.flush()
                 if verbosity:
@@ -359,7 +1296,7 @@ def make_output(avac_p, verbosity=False):
     # ------------------------------------------------------------------ #
     rho          = avac_p['rheology']['rho']
     dry_tol      = avac_p['computation'].get('dry_limit', 0.001)
-    vel_min      = avac_p['computation'].get('mass_threhsold_velocity', 0.01)   # m/s — threshold for "moving" cell
+    vel_min      = avac_p['computation'].get('mass_threshold_velocity', 0.01)   # m/s — threshold for "moving" cell
     initial_mass = bool(avac_p['computation'].get('initial_mass', True))
 
     mass_file     = os.path.join(outdir, "mass.txt")
@@ -369,7 +1306,7 @@ def make_output(avac_p, verbosity=False):
     def _read_frame_mass(frame_idx):
         """Return (total_wet_mass_kg, moving_mass_kg) from fort.q<frame_idx>."""
         try:
-            from clawpack import pyclaw as _pyclaw
+            from clawpack import pyclaw as _pyclaw  # type: ignore
             sol = _pyclaw.Solution()
             fmt = avac_p['output']['output_format']
             file_format = 'ascii' if fmt == 'ascii' else 'binary'
@@ -421,12 +1358,12 @@ def make_output(avac_p, verbosity=False):
         bar = "█" * filled + "░" * (20 - filled)
         if frames_done > 0:
             eta = elapsed * (nb_simul - frames_done) / frames_done
-            if avac_p['output']['Language']=='French':
+            if avac_p['output']['language']=='French':
                 time_str = f"  temps écoulé {elapsed:.0f}s  | fin estimé du calcul dans ~{eta:.0f} s"
             else:
                 time_str = f"  elapsed {elapsed:.0f}s  estimated time to completion ~{eta:.0f} s" 
         else:
-            if avac_p['output']['Language']=='French':
+            if avac_p['output']['language']=='French':
                 time_str = f"  temps écoulé {elapsed:.0f} s"
             else:
                 time_str = f"  elapsed {elapsed:.0f} s"
@@ -450,7 +1387,7 @@ def make_output(avac_p, verbosity=False):
                         _mf.write(f"{t_sim:.3f},{wet:.1f},{mov:.1f},{frac:.4f}\n")
                     # Early-stop check (skip frame 0)
                     if frame_idx > 0 and mass_initial and frac < mass_frac_stop and initial_mass:
-                        if avac_p['output']['Language']=='French':
+                        if avac_p['output']['language']=='French':
                             sys.stdout.write(
                                 f"\nAVA C: arrêt prématuré car la masse vaut {100*frac:.1f}% "
                                 f"de la masse initiale à t = {t_sim:.1f} s\n")
@@ -476,24 +1413,23 @@ def make_output(avac_p, verbosity=False):
     sys.stdout.flush()
 
     if stopped_early:
-        if avac_p['output']['Language']=='French':
+        if avac_p['output']['language']=='French':
             print(f"Arrêt du calcul, car la masse est : {mass_file}")
         else:
             print(f"Computation stopped early. Mass history: {mass_file}")
     elif process.returncode == 0:
-        if avac_p['output']['Language']=='French':
+        if avac_p['output']['language']=='French':
             print("Calcul achevé avec succès.")
         else:
             print("Computation successful.")
     else:
-        if avac_p['output']['Language']=='French':
+        if avac_p['output']['language']=='French':
             print("Échec du calcul. Voir le fichier 'avac.log'.")
         else:
             print("Failed! See avac.log.")
 
-
 # animation
-def make_animation(avac_p,verbosity=True):
+def make_animation(avac_p, verbosity=True):
     """
     Progress bar added
     Execute the animation script make_fgout_animation.py
@@ -584,54 +1520,12 @@ def make_animation(avac_p,verbosity=True):
             print(f"Creation of the html file: AVAC_animation_for_{avac_p['animation']['variable']}_{return_period}yr.html in the directory {animation_dir}.")
     else:
         print("Failed! See the log file: animation.log.")
-    
-###################
-# post-processing #
-###################
-fn_eta      = lambda q: q[3,:,:]                     # eta = z_b +h
-fn_ground   = lambda q: q[3,:,:] - q[0,:,:]          # z_b
-fn_h        = lambda q: q[0,:,:]                     # h
-fn_husquare = lambda q: q[1,:,:]**2+q[2,:,:]**2      # h²(u²+v²)
-fn_extract  = lambda q: np.array((fn_h(q),fn_eta(q))) # (h, eta)
-fn_hu       = lambda q: q[1,:,:]                     # hu
-fn_hv       = lambda q: q[2,:,:]                     # hv
-fn_u        =  lambda q: np.where(q[0,:,:]>0, (q[1,:,:]/q[0,:,:]), 0)  # u
-fn_v        =  lambda q: np.where(q[0,:,:]>0, (q[2,:,:]/q[0,:,:]), 0)  # v    
-fn_velocity =  lambda q: np.where(q[0,:,:]>0, np.sqrt((q[2,:,:]/q[0,:,:])**2+(q[1,:,:]/q[0,:,:])**2), 0)  # v 
 
 
 ######################
-# initial conditions #
+# Initial conditions #
 ######################
 
-def correctingFactor1(s,theta,nu):
-    """
-    De Quervain's correction of d_0
-    Input: 
-        * s: local slope, 
-        * theta = critical slope (deg), 
-        * nu: de Quervain's coefficient
-    Output: correction as multiplying factor
-    """
-    theta_rad = np.deg2rad(theta) # conversion to radians
-    q         = np.arctan(s)      # conversion from slope to angle (radians)
-    if q > np.deg2rad(25):
-       return (np.sin(theta_rad)-nu*np.cos(theta_rad))/(np.sin(q)-nu*np.cos(q))
-    else:
-       return 0
-
-def correctingFactor2(z,zref,gradient_hypso):
-    """
-    Burkard's correction of d_0
-    Input: local elevation, zref: elevation of the measurement station
-           gradient_hypso: hypsometric gradient (additional snow [m] quantity per 100-m altitude range)
-    Output: correction
-    """
-    return (z-zref)*gradient_hypso/100
-
-##########
-# raster #
-##########
 def extract_values(text):
     """ 
     Goal: extracting the number and word from a string 
@@ -666,62 +1560,8 @@ def extract_values(text):
     else:
         return False
 
-def count_header_lines(filepath, num_lines=10):
-    """
-    dertermines the header size of the raster file, i.e.
-    the number of lines with alphanumeric information
-    Input: file name
-    Output: number of lines
-    """
-    count = 0
-    for i in range(1, num_lines + 1):  # Les lignes dans linecache commencent à 1
-        line = getline(filepath, i).strip()  # Supprime espaces et \n
-        
-        # Supprime les nombres (y compris en notation scientifique) au début de la ligne
-        cleaned_line = re.sub(r'^[\s\d\.\-+eE]+', '', line).strip()
-
-        # Vérifie s'il reste au moins une lettre dans la ligne
-        if re.search(r'[a-zA-Z]', cleaned_line):
-            count += 1
-
-    return count
-
-def determine_file_type(file):
-    """ 
-    Goal: determining the nature of a raster file
-    Input: raster *.brage.asc
-    Output: the file type (grass, esri or claw format)
-    """
-    try:
-        with open(file, "r") as file:
-            text = file.readline().strip()
-        # Regular expression to find the first number
-        number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
-        # Search for the first number
-        number_match = re.search(number_pattern, text)
-        # Search for the first word
-        word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only)
-        # Regular expression to find the first word
-        word_match = re.search(word_pattern, text)
-        start_position = word_match.start() 
-        word = word_match.group()
-        type_file = 'esri'
-        if start_position == 0:
-            type_file = 'esri'
-        else:
-            type_file = 'claw'
-        if word in ['north','south','east','west']:
-            type_file = 'grass'
-        
-        if type_file in ['esri','claw','grass']:
-            return type_file
-        else:
-            print(f'Error!I cannot determine the type of the file {file}.')
-    except FileNotFoundError:
-        print(f"The file '{file}' does not exist.")
-
 # export-to-Qgis function 
-def export_raster(fname,tableau,xll,yll,cellsize,ndata=-9999,boolean=False):
+def export_raster(fname, tableau, xll, yll, cellsize, ndata = -9999, boolean = False):
     """
     export numpy arrays 'tableau' to file fname in an esri ASCII format
     """
@@ -734,193 +1574,12 @@ def export_raster(fname,tableau,xll,yll,cellsize,ndata=-9999,boolean=False):
     fmt    = '%1i' if boolean else "%1.2f"
     np.savetxt(fname, np.nan_to_num(tableau.T[::-1,:] ,nan=ndata), header=header, fmt=fmt, comments='')
 
+
 ###################################
-# importing raster and shapefiles #
+# Importing raster and shapefiles #
 ###################################
-def reading_raster_file(source, nan_replace = False): 
-    '''
-    Read raw data from source. The source uses ASCII Grass format (based on cardinal directions). The 
-    function reading_raster_file does some work to read and convert these data
-    into a format compatible with clawpack
-    For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
-    '''
-    source = str(source)
-    hdr_size = count_header_lines(source, num_lines=10)  # header size
-    tab = np.genfromtxt(source, skip_header=hdr_size, missing_values='*' ) 
-    if nan_replace: tab = np.nan_to_num(tab,nan=-9999)
-    
-    hdr = [getline(source, i) for i in range(1, hdr_size+1)]
-     
-    header_extraction = np.array([extract_values(string) for string in hdr])
-    values = [float(val) for val in header_extraction[:,1]]
-    keys = header_extraction[:,2]
-    type_file = determine_file_type(source)
-    if 'xllcenter' in keys:
-        grid_type = 'grid'
-    else:
-        grid_type = 'cell'
-    dictionnaire = {keys[k]:values[k] for k in range(0,hdr_size)}
-    # DEM extent
-    if (type_file == 'grass'):
-        ymin = dictionnaire['south']
-        ymax = dictionnaire['north']
-        xmin = dictionnaire['west']
-        xmax = dictionnaire['east']
-        nbx  = int(dictionnaire['cols'])
-        nby  = int(dictionnaire['rows'])
-    if (grid_type == 'cell') and (type_file == 'esri'):
-        nbx  = int(dictionnaire['ncols'])
-        nby  = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin = dictionnaire['yllcorner']
-        ymax = ymin+(nby-1)*cell_size
-        xmin = dictionnaire['xllcorner']
-        xmax = xmin+(nbx-1)*cell_size
-    if (type_file == 'claw'):
-        nbx  = int(dictionnaire['ncols'])
-        nby  = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin = dictionnaire['ylower']
-        ymax = ymin+nby*cell_size
-        xmin = dictionnaire['xlower']
-        xmax = xmin+nbx*cell_size
-    if (grid_type == 'grid') and (type_file == 'esri'):
-        nbx  = int(dictionnaire['ncols'])
-        nby  = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin = dictionnaire['yllcenter']-cell_size/2
-        ymax = ymin+nby*cell_size
-        xmin = dictionnaire['xllcenter']-cell_size/2
-        xmax = xmin+nbx*cell_size
- 
-    x = np.linspace(xmin,xmax,nbx)
-    y = np.linspace(ymin,ymax,nby)
-    X_fine_grid, Y_fine_grid = np.meshgrid(x,y)
 
-    init = topo.Topography()
-    init.X = X_fine_grid
-    init.Y = Y_fine_grid 
-    init.Z = tab[::-1,:]
-    init.y = Y_fine_grid[:,0]
-    init.x = X_fine_grid[0,:]
-    return init
-
-def reading_raster_file_features(source): 
-    '''
-    Read raster data from source. The source uses ASCII Grass format (based on cardinal directions). The 
-    function reading_raster_file extracts information from the header
-    For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
-    input: raster file
-    output: xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionnaire, failure, remarks
-    '''
-    source = str(source)
-    hdr_size          = count_header_lines(source, num_lines=10)  # header size
-    hdr               = [getline(source, i) for i in range(1, hdr_size+1)]
-    header_extraction = np.array([extract_values(string) for string in hdr])
-    values            = [float(val) for val in header_extraction[:,1]]
-    keys              = header_extraction[:,2]
-    type_file = determine_file_type(source)
-    remarks   = header_extraction[:,3]
-    failure   = header_extraction[:,0]
-    if 'xllcenter' in keys:
-        grid_type = 'node'
-    else:
-        grid_type = 'cell'
-    dictionnaire = {keys[k]:values[k] for k in range(0,hdr_size)}
-    # DEM extent
-    if (type_file == 'grass'):
-        ymin = dictionnaire['south']
-        ymax = dictionnaire['north']
-        xmin = dictionnaire['west']
-        xmax = dictionnaire['east']
-        nbx  = int(dictionnaire['cols'])
-        nby  = int(dictionnaire['rows'])
-        cell_size = (xmax-xmin)/nbx
-    if (grid_type == 'cell') and (type_file == 'esri'):
-        nbx  = int(dictionnaire['ncols'])
-        nby  = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin = dictionnaire['yllcorner']
-        ymax = ymin+(nby-1)*cell_size
-        xmin = dictionnaire['xllcorner']
-        xmax = xmin+(nbx-1)*cell_size
-    if (type_file == 'claw'):
-        nbx  = int(dictionnaire['ncols'])
-        nby  = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin = dictionnaire['ylower']
-        ymax = ymin+nby*cell_size
-        xmin = dictionnaire['xlower']
-        xmax = xmin+nbx*cell_size
-    if (grid_type == 'grid') and (type_file == 'esri'):
-        nbx  = int(dictionnaire['ncols'])
-        nby  = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin = dictionnaire['yllcenter']-cell_size/2
-        ymax = ymin+nby*cell_size
-        xmin = dictionnaire['xllcenter']-cell_size/2
-        xmax = xmin+nbx*cell_size
-    dictionary_extent = {'xmin':xmin,'xmax':xmax,'ymin':ymin,'ymax':ymax,'nbx':nbx,'nby':nby,'cell_size':cell_size,'nodata_value':-9999}
-
-    return xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary_extent, failure, remarks, grid_type 
-
-def check_raster(file):
-    """
-    checks whether 'file' is a raster file
-    Output: True if the file is a raster (or no error has been pinpointed)
-            False if import raises problems
-    """
-    print(f"Raster file: {file}") 
-    print()
-    if os.path.isfile(file):
-        print(f"File {file} exists in the wording directory.")
-    print()
-    xmin, xmax, ymin, ymax, nbx, nby, cell_size, dico, failure, remarks, grid_type  = \
-          reading_raster_file_features(file)
-    raster_features = [['xmin',xmin],['xmax',xmax],['ymin',ymin],['ymax',ymax],['nbx',nbx],['nby',nby],['cell size',cell_size]]
-    # Check if all strings are empty
-    test_all_remark_empty   = np.all(remarks == '')
-    test_all_success_import = np.all(failure == 'True')
-    if test_all_remark_empty and test_all_success_import:
-        print("No problem detected in the raster file")
-    elif test_all_success_import:
-        # some problems detected
-        non_empty_remark = remarks[remarks != '']
-        print(f"I detected {len(non_empty_remark )} potential problem(s):")
-        for rmk in non_empty_remark:
-            print("* ", rmk)
-    else:
-        print("Check your file! I am not able to import it as a raster file.")
-    raster_type = determine_file_type(file)
-    print()
-    print('Raster features')
-    print(f"* The raster format is: {raster_type}.")   
-    print(f"* The grid type is: {grid_type}.")      
-
-    # Format the numbers in raster_features
-    formatted_raster_features = format_numbers(raster_features)
-
-    # Calculate column widths
-    col_width_feature = max(len(row[0]) for row in formatted_raster_features)
-    col_width_value = max(len(row[1]) for row in formatted_raster_features)
-
-    # Print the table with custom formatting
-    # Print headers
-    print()
-    print("-" * (col_width_feature + col_width_value + 3))
-    print(f"{'Feature':<{col_width_feature}} {'Value':>{col_width_value}}")
-    print("-" * (col_width_feature + col_width_value + 3))
-
-    # Print rows
-    for feature, value in formatted_raster_features:
-        print(f"{feature:<{col_width_feature}} {value:>{col_width_value}}")
-
-    if test_all_success_import: 
-        return True
-    else:
-        return False
-    
-def export_claw_dem_topotool(xmin,xmax,ymin,ymax,nbx,nby,alt,name_file = 'topography.asc',boolean = False):
+def export_claw_dem_topotool(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topography.asc', boolean = False):
     """
     convert the DEM to a claw format and save it.
     Caveat. Consider that this finction uses the '%15.7e' format, and thus the size of the resulting file is large.
@@ -939,19 +1598,19 @@ def export_claw_dem_topotool(xmin,xmax,ymin,ymax,nbx,nby,alt,name_file = 'topogr
     y = np.linspace(ymin,ymax,nby)
     X_fine_grid, Y_fine_grid = np.meshgrid(x,y)
 
-    init = topo.Topography()
+    init = topotools.Topography()
     init.X = X_fine_grid
     init.Y = Y_fine_grid 
     init.Z = alt
     init.y = Y_fine_grid[:,0]
     init.x = X_fine_grid[0,:]
     if boolean:
-	    init.write(name_file,topo_type=3, Z_format='%1i')
+        init.write(name_file, topo_type = 3, Z_format = '%1i')
     else:
-        init.write(name_file,topo_type=3)
+        init.write(name_file, topo_type = 3)
 
-def export_claw_dem(xmin,xmax,ymin,ymax,nbx,nby,alt,name_file = 'topography.asc',boolean = False,
-                    Z_format='%9.2f',Language = 'French'):
+def export_claw_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topography.asc', boolean = False,
+                    Z_format='%9.2f', language = 'French'):
     """
     convert the DEM to a claw format and save it (clawpack topo type 3).
     Context: this function provides raster files ~40 % smaller than the clawpack default '%15.7e'.
@@ -967,7 +1626,7 @@ def export_claw_dem(xmin,xmax,ymin,ymax,nbx,nby,alt,name_file = 'topography.asc'
     Output:
         - raster file 'name_file' compatible with clawpack (topotype = 3)
     """
-    if Language == 'French':
+    if language == 'French':
         print(f'* Export du MNT vers le raster {name_file}.')
     else:
         print(f'* Export of DEM to file {name_file}.')
@@ -976,14 +1635,14 @@ def export_claw_dem(xmin,xmax,ymin,ymax,nbx,nby,alt,name_file = 'topography.asc'
     cell_size_y  = (ymax - ymin) / (nby - 1)
     deviation    = abs((cell_size-cell_size_y)/cell_size)
     if deviation > 0.01: 
-            if Language == 'French':
+            if language == 'French':
                 print(f"* Attention, je trouve dx = {cell_size:.2f} m et dy = {cell_size_y:.2f} m.")
             else:
                 print(f"* Caveat: I found dx = {cell_size:.2f} m and dy = {cell_size_y:.2f} m.")
     Z = np.where(np.isnan(alt), no_data, alt)
     num_nan = np.isnan(alt).sum()
     if num_nan > 0:
-        if Language == 'French':
+        if language == 'French':
             print(f'* Z contient {num_nan} valeurs non numériques (nan), remplacées par {no_data}.')
         else:
             print(f'* Z contains {num_nan} nan values, replacing with {no_data}.')
@@ -1031,103 +1690,6 @@ def export_claw_dem_window(topo_file, window, name_file='topography_window.asc')
     export_claw_dem(xmin_out, xmax_out, ymin_out, ymax_out,
                     nbx_out, nby_out, Z_window, name_file)
 
-def plot_topo(topo_file, ax=None, figsize_width=10, contour_interval=25,
-              azdeg=315, altdeg=45, step = 200,ylabel_position="left",resampling=None):
-    """
-    Draws the topographic background (hillshade + contour lines) on a matplotlib axis.
-
-    If ax is None, create a new figure with dimensions suitable for the raster. The axis ticks should align with multiples of 100 m (absolute coordinates).
-
-    Input:
-        * topo_file        : object returned by reading_raster_file (Digital Elevation Model, DEM)
-        * ax               : existing matplotlib axis (optional; if None, a figure is created)
-        * figsize_width    : width of the figure in inches if ax=None (default is 10)
-        * contour_interval : contour line spacing in meters (default is 25)
-        * azdeg, altdeg    : azimuth and elevation of the light source for the hillshade
-        * step             : step between labels, default is 200 m
-        * ylabel_position  : position of the y-labels
-        * resampling       : integer or None. If an integer is given, the DEM is resampled with a step = resampling
-
-    Output:
-        * fig, ax, x0, y0  (where x0, y0: southwest corner of the raster in absolute coordinates)
-    """
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
-    import math
-
-    x0 = float(topo_file.x[0])
-    y0 = float(topo_file.y[0])
-    dx = float(topo_file.x[-1] - topo_file.x[0])
-    dy = float(topo_file.y[-1] - topo_file.y[0])
-
-    if ax is None:
-        w = figsize_width
-        h = round(w * dy / dx, 2)
-        fig, ax = plt.subplots(figsize=(w, h), layout='constrained')
-        try:
-            fig.canvas.header_visible = False   # ipympl uniquement
-        except AttributeError:
-            pass
-    else:
-        fig = ax.figure
-
-    Z = topo_file.Z
-    nrows, ncols = Z.shape
-    if ncols != len(topo_file.x) or nrows != len(topo_file.y):
-        # Z a été rééchantillonné sans mettre à jour x/y : on recalcule la grille depuis Z.shape
-        x_rel = np.linspace(0, float(topo_file.x[-1] - topo_file.x[0]), ncols)
-        y_rel = np.linspace(0, float(topo_file.y[-1] - topo_file.y[0]), nrows)
-    else:
-        x_rel = topo_file.x - x0
-        y_rel = topo_file.y - y0
-    XX, YY = np.meshgrid(x_rel, y_rel)
-
-    # --- hillshade ---
-    ls = mcolors.LightSource(azdeg=azdeg, altdeg=altdeg)
-    cell_size = float(x_rel[1] - x_rel[0])
-    hs = ls.hillshade(Z, vert_exag=2, dx=cell_size, dy=cell_size)
-    if resampling is None:
-        ax.pcolormesh(XX, YY, hs, cmap="gray", shading="auto", alpha=0.8)
-    else:
-        ax.pcolormesh(XX[::resampling,::resampling], YY[::resampling,::resampling], hs[::resampling,::resampling], cmap="gray", shading="auto", alpha=0.8)
-
-    # --- courbes de niveau ---
-    zmin_c = int(np.nanmin(Z) // contour_interval) * contour_interval
-    zmax_c = int(np.nanmax(Z) // contour_interval + 1) * contour_interval
-    levels_minor = np.arange(zmin_c, zmax_c, contour_interval)
-    levels_major = np.arange(zmin_c, zmax_c, contour_interval * 4)
-
-    ax.contour(XX, YY, Z, levels=levels_minor, colors="k", linewidths=0.4, alpha=0.5)
-    cs = ax.contour(XX, YY, Z, levels=levels_major, colors="k", linewidths=0.9, alpha=0.8)
-    ax.clabel(cs, fmt="%d m", fontsize=8, inline=True)
-
-    ax.set_aspect("equal")
-
-    # --- graduations sur multiples de 100 m (coordonnées absolues) ---
-    
-    x_ticks = np.arange(math.ceil(x0 / step) * step, x0 + dx + step, step) - x0
-    y_ticks = np.arange(math.ceil(y0 / step) * step, y0 + dy + step, step) - y0
-    x_ticks = x_ticks[(x_ticks >= 0) & (x_ticks <= dx)]
-    y_ticks = y_ticks[(y_ticks >= 0) & (y_ticks <= dy)]
-    ax.set_xticks(x_ticks)
-    ax.set_yticks(y_ticks)
-
-    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v + x0:.0f}"))
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v + y0:.0f}"))
-    if ylabel_position=='right':
-        ax.yaxis.tick_right()
-        ax.yaxis.set_label_position("right")    
-    else:
-        ax.yaxis.tick_left()
-        ax.yaxis.set_label_position("left") 
-    ax.tick_params(axis="y", labelrotation=90)
-    ax.set_xlabel(r"$x$  [m]")
-    ax.set_ylabel(r"$y$  [m]")
-    ax.grid(linewidth=0.7, alpha=0.85)
-
-    return fig, ax, x0, y0
-
-
 class WindowSelector:
     """
     Interactive tool for defining a rectangular window on a topographic plot.
@@ -1159,9 +1721,9 @@ class WindowSelector:
 
         self.window = None
 
-        self._fig, ax, self._x0, self._y0 = plot_topo(
+        self._fig, ax, self._x0, self._y0 = raster_plot_topo(
             topo_file, figsize_width=figsize_width,
-            contour_interval=contour_interval, azdeg=azdeg, altdeg=altdeg, step = step)
+            contour_interval=contour_interval, azdeg=azdeg, altdeg=altdeg, grid = step)
 
         if len(line) >= 2:
             ax.plot([line[0][0] - self._x0, line[1][0] - self._x0],
@@ -1195,14 +1757,14 @@ class WindowSelector:
             flush=True,
         )
 
-def export_claw_initiation_file(topo_file,zi,filename='init.xyz'):   
+def export_claw_initiation_file(topo_file, zi, filename = 'init.xyz'):   
     """
     save the initiation file as topotype-1 file
     Input: topo_file, zi
     optional argument:filename
     """
     print(f'Export of initial conditions to file init.xyz.')   
-    init   = topo.Topography()
+    init   = topotools.Topography()
     init.X = topo_file.X 
     init.Y = topo_file.Y 
     init.Z = zi[:,:] 
@@ -1211,376 +1773,10 @@ def export_claw_initiation_file(topo_file,zi,filename='init.xyz'):
     init.write(filename,topo_type=1)
     print(f'* maximum initial depth of starting zone  = {np.max(zi[:,:])} m')    
 
-def test_keys(dictionary_tested,dictionary_ref) -> int:
-    """ 
-    checks whether all the keys are defined in the loaded dictionary 
-    """
-    if not isinstance(dictionary_ref, dict):
-        dictionary_ref = {key: None for key in dictionary_ref}
-    if not sorted(list(dictionary_tested.keys()) )==sorted(list(dictionary_ref.keys()) ):
-        print('The configuration file does not satisfy the requirements.')
-        difference_1 = set(dictionary_ref.keys())-set(dictionary_tested.keys())
-        difference_2 = set(dictionary_tested.keys())-set(dictionary_ref.keys())
-        if len(difference_1)>0:
-            print(f"There is missing information. Please check your configuration file. Computation will fail otherwise!")
-            for info in difference_1: print(f"* Missing key: {info}")
-            return 1
-        if len(difference_2)>0:
-            print(f"There is additional information. This information will not be used here.")
-            for info in difference_2: print(f"* Additional key: {info}")
-            return 0
-        return 0
-    else:
-        return 0
-
-def import_initial_condition(file):
-    """"
-    imports the starting-area shapefile.
-    input: file name
-    output: geopandas frame (set of polygons), number of polygons
-    """
-    areas = gp.read_file(file)
-    nb_areas = len(areas)
-    print(f"There are {nb_areas} starting area(s) in the file {file}.")
-
-    # determine the CRS of the GeoDataFrame
-    crs = areas.crs
-
-    # Print the CRS information
-    print("Coordinate Reference System (CRS) of the shapefile:", crs)
-
-    # Extract the EPSG code (if available)
-    if crs is not None:
-        epsg_code = crs.to_epsg()
-        if epsg_code is not None:
-            print("EPSG code of the shapefile:", epsg_code)
-        else:
-            print("The CRS does not have an EPSG code, or it is not recognized.")
-    else:
-        print("The shapefile does not have a defined CRS.")
-    return areas, nb_areas 
 
 ###########
-# testing #
+# Testing #
 ###########
-
-def import_configuration_files(file_name):
-    """
-    import the configuration and check consistency
-    output: a dictionary with AVAC parameters
-    the script can pinpoint potential errors in the parameters
-    """
-    print(f"Opening the configuration file {file_name}...")
-
-    with open(file_name, 'r') as file:
-        avac_parameters = yaml.safe_load(file)
-
-    def is_genuine_int(var):
-        return isinstance(var, int) and not isinstance(var, bool)    
-
-    def is_integer(key_1,key_2) -> int:
-        """check whether avac_parameters[key_1][key_2] is integer"""
-        var = avac_parameters[key_1][key_2]
-        if not is_genuine_int(var):
-            print(f"The variable {key_1}.{key_2} must be an integer! Here, I get {key_1}.{key_2} = {var}")
-            return 1
-        else:
-            return 0
-
-    def is_boolean(key_1,key_2) -> int:
-        """checks whether avac_parameters[key_1][key_2] is boolean"""
-        var = avac_parameters[key_1][key_2]
-        if not isinstance(var, bool):
-            print(f"The variable {key_1}.{key_2} must be a Boolean! Here, I get {key_1}.{key_2} = {var}")
-            return 1
-        else:
-            return 0
-    topo_source = avac_parameters['topography']['topo_source']
-    topo_dir    = avac_parameters['computation']['topo_dir']
-
-    keys_avac          = ['computation', 'release', 'rheology', 'topography','output','animation','date','objects']
-    keys_comput_virtual= ['cfl_max', 'cfl_target', 'dry_limit', 'max_iter', 'nb_simul', \
-                        'refinement', 't_max','cell_size','boundary','output_directory', \
-                        'boundary_west','boundary_east','boundary_south','boundary_north', \
-                        'xlower','xupper','ylower','yupper', 'dx','dy','limiter', \
-                        'track_mass', 'mass_frac_stop', 'force_stop']
-    keys_comput_real   = ['cfl_max', 'cfl_target', 'dry_limit', 'max_iter', 'nb_simul', \
-                        'refinement', 't_max','cell_size','boundary','output_directory','topo_dir']
-    keys_release       = ['correction_elevation', 'correction_slope', 'd0', 'gradient_hypso', 'nu', 'theta_cr', 'z_ref',  'period_return']
-    keys_rheology      = ['beta', 'model', 'mu', 'rho', 'u_cr', 'xi']
-    keys_topography    = ['dem', 'starting_areas','finer_dem','topo_refinement','topo_source']    
-    keys_output        = ['output_format', 'verbosity', 'delta_t']
-    keys_animation     = ['n_out','variable']
-    keys_objects       = ['line']
-    rheological_models = ['Voellmy','Coulomb']
-    output_formats     = ['ascii','binary32','binary64']
-    verbosity_formats  = [0,1,2,3,4] # see https://www.clawpack.org/pyclaw/output.html
-    boundary_formats   = ['wall','extrap','user']
-    animation_formats   = ['pressure','depth','velocity']
-
-    keys_computation =  keys_comput_real if topo_source == 'real_world' else keys_comput_virtual
-
-    error = 0
-    error += test_keys(avac_parameters,keys_avac) # check whether the config file keys are those expected
-
-    print()
-    # Checs topography
-    error += test_keys(avac_parameters['topography'],keys_topography)
-    file_path = Path(topo_dir) / avac_parameters['topography']['dem']
-    topo_refinement = avac_parameters['topography']['topo_refinement']
-    if file_path.exists():
-        print(f"- I found the DEM file {file_path}.")
-    test_success = [bool(chain) for chain in reading_raster_file_features(file_path)[8] ]
-    if np.all(np.array(test_success)):
-        print("  File import raises no issue.")
-    else:
-        print(f"  When importing file {avac_parameters['topography']['dem']} from {topo_dir}, I found errors in the header. Please check.")
-        error += 1
-    if topo_refinement:
-        fine_topo_path = Path(topo_dir) / avac_parameters['topography']['finer_dem']
-        if fine_topo_path.exists():
-            print(f"- Finer topography: I found the DEM file {fine_topo_path} in the directory {topo_dir}.")
-        test_success = [bool(chain) for chain in reading_raster_file_features(fine_topo_path)[8] ]
-        if np.all(np.array(test_success)):
-            print("  File import raises no issue.")
-        else:
-            print(f"  When importing file {avac_parameters['topography']['finer_dem']}, I found errors in the header. Please check.")
-            error += 1
-
-
-    file_path = avac_parameters['topography']['starting_areas']
-    if file_path is None:
-        print("- No starting areas shapefile specified (starting_areas is null).")
-    else:
-        if os.path.isfile(file_path):
-            print(f"- I found the shapefile {file_path} containing the starting areas.")
-            print(f"  It seems ok.")
-        else:
-            print(f"- I failed to import {file_path}! Please check.")
-            error += 1
-        file_path = avac_parameters['topography']['starting_areas'][:-3]+'shx'
-        if not os.path.isfile(file_path):
-            print(f"- File {file_path} is missing! Please check. ")
-            print(f"  This file accompanies the shapefile. Find it or reconstruct it using gdal. ")
-            error +=1
-    # checks output
-    error += test_keys(avac_parameters['output'],keys_output)
-    error += is_integer('output','verbosity')
-    if avac_parameters['output']['output_format'] not in output_formats:
-        print(f"The output format {avac_parameters['output']['output_format'] } is unknown!")
-        print("The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
-    if avac_parameters['output']['verbosity'] not in verbosity_formats:
-        print(f"The verbosity parameter is set to {avac_parameters['output']['verbosity'] }.")
-        print("It should range from 0 to 4.")
-    if avac_parameters['output']['delta_t'] > avac_parameters['computation']['t_max']:
-        print(f"The parameter delta_t is set to {avac_parameters['output']['delta_t'] }.")
-        print(f"It is larger to t_max = {avac_parameters['computation']['t_max'] }!")
-        print("I correct it. Check!")
-        avac_parameters['output']['delta_t'] = avac_parameters['computation']['t_max']
-    # checks computation parameters
-    error += test_keys(avac_parameters['computation'],keys_computation)
-    if (avac_parameters['computation']['cfl_max']>1) or (avac_parameters['computation']['cfl_max']<0):
-        print(f"Check variable cfl_max = {avac_parameters['computation']['cfl_max']}")
-        print(f"This value should be an integer in the 0.1-1 range.")
-        error += 1
-    if (avac_parameters['computation']['cfl_target']>avac_parameters['computation']['cfl_max']):
-        print(f"Check variable cfl_target = {avac_parameters['computation']['cfl_max']}")
-        print(f"This value cannot be larger car cfl_max = {avac_parameters['computation']['cfl_max']}.")
-        error += 1
-    error += is_integer('computation','max_iter')
-    error += is_integer('computation','nb_simul')
-    error += is_integer('computation','refinement')
-    if (avac_parameters['computation']['refinement']<1) or (avac_parameters['computation']['refinement']>6):
-        print(f"Check variable refinement = {avac_parameters['computation']['refinement']}.")
-        print(f"This value should be an integer in the 1-6 range.")
-    if topo_source == 'real_world':
-        if avac_parameters['computation']['boundary'] not in boundary_formats:
-            print(f"The boundary condition {avac_parameters['computation']['boundary'] } is unknown!")
-            print("The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
-        if avac_parameters['computation']['boundary'] == 'user':
-            print("This is not implemented by default. Check file bc2.f90.")
-    else:
-        if avac_parameters['computation']['boundary_south'] not in boundary_formats:
-            print(f"The boundary condition {avac_parameters['computation']['boundary_south'] } is unknown!")
-            print("The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
-        if avac_parameters['computation']['boundary_south'] == 'user':
-            print("This is not implemented by default. Check file bc2.f90.")
-    # check release parameters
-    error += test_keys(avac_parameters['release'],keys_release)
-    error += is_boolean('release','correction_elevation')
-    error += is_boolean('release','correction_slope')
-    if (avac_parameters['release']['gradient_hypso']<0) or (avac_parameters['release']['gradient_hypso']>0.2):
-        print(f"Check variable gradient_hypso = {avac_parameters['release']['gradient_hypso']}.")
-        print(f"This value cannot be negative or larger than 20 cm/100 m.")
-        error += 1
-    if (avac_parameters['release']['z_ref']<0) or (avac_parameters['release']['z_ref']>9000):
-        print(f"Check variable z_ref = {avac_parameters['release']['z_ref']}.")
-        print(f"This value cannot be negative or larger than 9000 m.")
-        error += 1
-    if (avac_parameters['release']['theta_cr']<5) or (avac_parameters['release']['theta_cr']>50):
-        print(f"Check variable theta_cr = {avac_parameters['release']['theta_cr']}.")
-        print(f"This value should be expressed in degrees and close to 30.")
-        error += 1
-    # check animation
-    error += test_keys(avac_parameters['animation'],keys_animation)
-    error += is_integer('animation','n_out')
-    if avac_parameters['animation']['variable'] not in animation_formats:
-        print(f"The variable {avac_parameters['animation']['variable'] } for animation is unknown!")
-        print("The only current possibilities are: 'pressure', 'depth' or 'velocity'.")
-    # check rheology parameters
-    error += test_keys(avac_parameters['rheology'],keys_rheology)
-    if avac_parameters['rheology']['model'] not in rheological_models:
-        print(f"The rheological model {avac_parameters['rheology']['model'] } is unknown!")
-        print("The only current possibilities are: 'Voellmy' or 'Coulomb'.")
-    if (avac_parameters['rheology']['mu']<0.05) or (avac_parameters['rheology']['mu']>0.5):
-        print(f"Check variable mu = {avac_parameters['rheology']['mu']}.")
-        print(f"This value should be in the 0.05-0.5 range.")
-        error += 1
-    if (avac_parameters['rheology']['xi']<100) or (avac_parameters['rheology']['xi']>1e4):
-        print(f"Check variable xi = {avac_parameters['rheology']['xi']}.")
-        print(f"This value should be in the 100-10,000 range.")
-    if (avac_parameters['rheology']['u_cr']<0) or (avac_parameters['rheology']['u_cr']>0.5):
-        print(f"Check variable u_cr = {avac_parameters['rheology']['u_cr']}.")
-        print(f"This value should be in the 0-0.5 range.")
-        error += 1
-    if (avac_parameters['rheology']['rho']<100) or (avac_parameters['rheology']['rho']>1000):
-        print(f"Check variable rho = {avac_parameters['rheology']['rho']}.")
-        print(f"This value should be in the 100-1000 range.")
-        error += 1
-    if (avac_parameters['rheology']['beta']<0) or (avac_parameters['rheology']['u_cr']>1.5):
-        print(f"Check variable beta = {avac_parameters['rheology']['beta']}.")
-        print(f"This value should be in the 0-1.5 range.")
-        error += 1
-    print()    
-    if error>0:
-        print(f"Error(s) detected: {error}")
-    else:
-        print("Everything looks fine so far...")
-    print()
-    # Flatten the configuration dictionary
-    flat_configuration = flatten_dict(avac_parameters)
-
-    print("Configuration file:")
-    for key, value in flat_configuration.items():
-        var_name = key.replace('.', '_')
-        globals()[var_name] = value
-        print(f"* {var_name} = {value}")
-    return avac_parameters
-
-def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points=1000):
-    from scipy.interpolate import RegularGridInterpolator
-    from scipy.spatial.distance import cdist
-    """
-    Create a cross-section along a polyline. Originally made for plotting DEM cross-sections, but it works
-    for other two-dimensional data.
-    
-    Input:
-        * dem: masked array of DEM
-        * x_coords: x coordinates of DEM grid
-        * y_coords: y coordinates of DEM grid
-        * rofile_coords: array of (x,y) coordinates along the profile
-        * num_points: number of points to sample along the profile
-    Output:
-        * sampling_distances: distane from the origin point
-        * elevations: array of elevation along the polyline
-        * sampled_points: coordinates of points (if needed)
-    """
-    
-    # Create interpolator for DEM
-    # Use np.ma.filled so that masked cells become NaN rather than being
-    # interpolated from the raw fill value (-2e99 for fgmax never-wet cells).
-    dem_data = np.ma.filled(dem, np.nan) if np.ma.is_masked(dem) else np.asarray(dem)
-    interp = RegularGridInterpolator((y_coords, x_coords), dem_data,
-                                    bounds_error=False, fill_value=np.nan)
-    
-    # Calculate cumulative distance along the profile
-    profile_coords = np.array(profile_coords)
-    segments = np.diff(profile_coords, axis=0)
-    segment_lengths = np.sqrt(np.sum(segments**2, axis=1))
-    cumulative_distances = np.insert(np.cumsum(segment_lengths), 0, 0)
-    total_length = cumulative_distances[-1]
-    
-    # Create sampling distances along the entire profile
-    sampling_distances = np.linspace(0, total_length, num_points)
-    
-    # Interpolate points along the entire profile
-    sampled_points = []
-    for dist in sampling_distances:
-        # Find which segment this distance falls into
-        segment_idx = np.searchsorted(cumulative_distances, dist, side='right') - 1
-        segment_idx = min(segment_idx, len(segments) - 1)
-        
-        # Calculate position within the segment
-        segment_start_dist = cumulative_distances[segment_idx]
-        segment_progress = dist - segment_start_dist
-        segment_frac = segment_progress / segment_lengths[segment_idx]
-        
-        # Interpolate coordinates
-        start_point = profile_coords[segment_idx]
-        end_point = profile_coords[segment_idx + 1]
-        point = start_point + segment_frac * (end_point - start_point)
-        sampled_points.append(point)
-    
-    sampled_points = np.array(sampled_points)
-    
-    # Extract elevations at sampled points
-    elevations = interp(sampled_points[:, [1, 0]])  # Note: y,x order for RegularGridInterpolator
-    
-    return sampling_distances, elevations, sampled_points
-
-def import_polylines(file='profil.shp',Language = 'English'):
-    """ import a polyline and describes its features.
-    Input:
-        * file: name of the shapefile
-    Output:
-        * ligne: geopandas object
-        * coords_array: coordinates of the points
-    """
-    import geopandas as gp
-    # Read the shapefile
-    ligne = gp.read_file(file)
-    text3 = {'English':f"Consider providing a shapefile with a single polyline...",
-             'French':f"Il faut fournir un shapele avec une seule polyligne !"}
-    text4 = {'English':f"Coordinates array shape:",
-             'French':f"Dimensions du vecteur (array) des coordonnées : "}
-    text5 = {'English':f"Error... No data found!",
-             'French':f"Erreur... Pas de données !"}
-    # Extract coordinates from the geometry
-    if len(ligne) > 0:
-        # Get the first (and probably only) geometry
-        geometry = ligne.geometry.iloc[0]
-
-        # Extract coordinates
-        if geometry.geom_type == 'LineString':
-            coords = np.array(geometry.coords)
-            text1 = {'English':f"I import a LineString object with {len(coords)} points",
-                     'French':f"J'importe la polyline composée de {len(coords)} points"}
-            print(text1[Language])
-            for i in range(len(coords)): print(f"Point {i}: Coordinates x = {coords[i,0]:.1f} m and y = {coords[i,1]:.1f} m")
-
-        elif geometry.geom_type == 'MultiLineString':
-            # For MultiLineString, we will have trouble...
-            coords = []
-            for line in geometry.geoms:
-                coords.extend(list(line.coords))
-            text2 = {'English':f"I found a MultiLineString with {len(coords)} as the total number of points.",
-                     'French':f"J'ai trouvé un objet MultiLineString composé en tout de {len(coords)} points"}
-            print(text2[Language])
-            print(text3[Language])
-            
-        # Convert to numpy array for easier manipulation
-        coords_array = np.array(coords)
-        print(text4[Language], coords_array.shape)
-    else:
-        print(text5[Language])
-    return ligne, coords_array
-
-def export_profile(file,distances,elevations,header=False):
-    # export of the profile
-    with open(file, 'w') as f:
-        if header: f.write('distance\televation\n')  # header
-        for dist, elev in zip(distances, elevations):
-            f.write(f'{dist}\t{elev}\n')
 
 def format_m(x, decimals=1):
     """espace fine insécable"""

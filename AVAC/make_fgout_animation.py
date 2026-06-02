@@ -38,7 +38,7 @@ from datetime import timedelta
 from clawpack.geoclaw import fgout_tools
 from pathlib import Path
 from yaml import safe_load
-from module_avac import plot_topo, reading_raster_file
+from module_avac import raster_plot_topo, raster_read_file
 
 # opening the configuration file
 projdir = Path(__file__).parents[0]
@@ -135,9 +135,9 @@ cell_size = (-fgout1.X[0]+fgout1.X[1])[0]
 xmin = fgout1.X.min()
 ymin = fgout1.Y.min()
 
-topo_file = reading_raster_file(topo_dir / Files['topofile'])
+topo_file = raster_read_file(topo_dir / Files['topofile'])
 step = Movie['label_step']
-fig, axes, x0, y0 = plot_topo(topo_file,step=step)
+fig, axes, x0, y0 = raster_plot_topo(topo_file,grid=step)
 
 #cmap
 velocity = ma.masked_where(fgout1.h<0.001, fgout1.s)
@@ -147,22 +147,22 @@ pressure = 0.5*ρ*velocity**2/1e3 # pressure is expressed in kPa
 
 # plot
 
-Language = OUT['Language']
+language = OUT['language']
 if variable == 'depth':
-    légende = "hauteur (m)" if Language == 'French' else 'depth (m)'
+    légende = "hauteur (m)" if language == 'French' else 'depth (m)'
     pc = plottools.pcolorcells(fgout1.X-xmin, fgout1.Y-ymin, depth, cmap=cmap_depth, norm=norm_depth,ax=axes,alpha=0.75)
     cb = colorbar(pc, extend='max', shrink=0.7,label=légende)
 elif variable == 'pressure':
-    légende = 'pression cinétique (kPa)' if Language == 'French' else 'pressure (kPa)'
+    légende = 'pression cinétique (kPa)' if language == 'French' else 'pressure (kPa)'
     pc = plottools.pcolorcells(fgout1.X-xmin, fgout1.Y-ymin, pressure, cmap=cmap_pressure, norm=norm_pressure,ax=axes,alpha=0.75)
     cb = colorbar(pc, extend='max', shrink=0.7,label=légende)
 else:
-    légende = 'vitesse (m/s)' if Language == 'French' else 'velocity (m/s)'
+    légende = 'vitesse (m/s)' if language == 'French' else 'velocity (m/s)'
     pc = plottools.pcolorcells(fgout1.X-xmin, fgout1.Y-ymin, velocity, cmap=cmap_speed, norm=norm_speed,ax=axes,alpha=0.75)
     cb = colorbar(pc, extend='max', shrink=0.7,label=légende)
 
 
-texte = "Avalanche à " if Language == 'French' else "Avalanche at time "
+texte = "Avalanche à " if language == 'French' else "Avalanche at time "
 title_text = title(rf"{texte}$t=${fgout1.t:0.1f} s.") 
  
 

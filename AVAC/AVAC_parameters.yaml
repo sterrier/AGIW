@@ -27,7 +27,7 @@ date:
 objects:
   line: profil.shp
 output:
-  Language: French
+  language: French
   delta_t: 1
   output_directory: _output100
   output_format: binary32
