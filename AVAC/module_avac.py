@@ -1255,6 +1255,48 @@ def export_profile(file, distances, elevations, header = False):
         for dist, elev in zip(distances, elevations):
             f.write(f'{dist}\t{elev}\n')
 
+def extract_values(text):
+    """ 
+    Goal: extracting the number and word from a string 
+    Output: Boolean, number, word, remark
+    The Boolean is True when extraction is successful, False otherwise.
+    The remark is a text generated when something unusual is met
+    """
+
+    # Regular expression to find the first number
+    number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
+    
+    # Search for the first number
+    numbers = re.findall(number_pattern, text)
+    num_count = len(numbers)
+    number_match = numbers[0]
+    
+    # Search for the first word
+    word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only and underscore)
+    
+    # Regular expression to find the first word
+    word_match = re.search(word_pattern, text)
+    if word_pattern == 'cellsize':
+        if num_count > 1:
+            remark = "rectangular cells"
+        else:
+            remark = "square cells"
+    else:
+        if num_count > 1:
+            if word_match is not None:
+                remark = "more than one value for " + word_match.group()
+            else:
+                remark = "more than one value for unknown match"
+        else:
+            remark = ""
+    
+    if number_match and word_match:
+        number = number_match # Extract number
+        word = word_match.group()
+        return True, number, word, remark
+    else:
+        return False
+
 def find_nearest(array, value):
     """
     Find the index of the element in an array closest to a specified value.
@@ -1342,6 +1384,7 @@ def make_output(avac_p, verbosity=False):
     Executes 'make clean', then 'make .output', with a progress bar.
     Progress is tracked by counting fort.t???? files written to _output,
     which is robust regardless of stdout buffering in xgeoclaw.
+    
     Input:
         * avac_p   : dictionary of configuration parameters
         * verbosity: if True, also print every line to the console;
@@ -1364,6 +1407,71 @@ def make_output(avac_p, verbosity=False):
     import glob as _glob
     import time as _time
 
+    def _kill_process():
+        """Terminate the solver. With force_stop, kill the whole process group."""
+        if force_stop:
+            import signal
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass   # process already finished
+        else:
+            process.terminate()
+
+    def _log_writer():
+        with open("avac.log", "w") as log_file:
+            for line in (process.stdout or []):
+                log_file.write(line)
+                log_file.flush()
+                if verbosity:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+
+    def _print_bar(frames_done):
+        elapsed = _time.time() - t_start
+        pct = int(100 * frames_done / nb_simul)
+        filled = pct // 5
+        bar = "█" * filled + "░" * (20 - filled)
+        if frames_done > 0:
+            eta = elapsed * (nb_simul - frames_done) / frames_done
+            if avac_p['output']['language']=='French':
+                time_str = f"  temps écoulé {elapsed:.0f}s  | fin estimé du calcul dans ~{eta:.0f} s"
+            else:
+                time_str = f"  elapsed {elapsed:.0f}s  estimated time to completion ~{eta:.0f} s" 
+        else:
+            if avac_p['output']['language']=='French':
+                time_str = f"  temps écoulé {elapsed:.0f} s"
+            else:
+                time_str = f"  elapsed {elapsed:.0f} s"
+        sys.stdout.write(f"\r  [{bar}] {pct:3d}%  frame {frames_done}/{nb_simul}{time_str}")
+        sys.stdout.flush()
+
+    def _read_frame_mass(frame_idx):
+        """Return (total_wet_mass_kg, moving_mass_kg) from fort.q<frame_idx>."""
+        try:
+            from clawpack import pyclaw as _pyclaw  # type: ignore
+            sol = _pyclaw.Solution()
+            fmt = avac_p['output']['output_format']
+            file_format = 'ascii' if fmt == 'ascii' else 'binary'
+            sol.read(frame_idx, path=outdir, file_format=file_format,
+                     read_aux=False)
+            wet_mass = mov_mass = 0.0
+            for state in sol.states:
+                dx_s, dy_s = state.grid.delta
+                h  = state.q[0]
+                hu = state.q[1]
+                hv = state.q[2]
+                wet    = h > dry_tol
+                h_safe = np.where(wet, h, 1.0)
+                spd    = np.where(wet,
+                               np.sqrt((hu/h_safe)**2 + (hv/h_safe)**2),
+                               0.0)
+                wet_mass += rho * np.sum(h[wet]) * dx_s * dy_s
+                mov_mass += rho * np.sum(h[wet & (spd > vel_min)]) * dx_s * dy_s
+            return wet_mass, mov_mass
+        except Exception:
+            return None, None
+
     if not isinstance(verbosity, bool):
         verbosity = False
     t_0      = avac_p['computation'].get('t_0',0)
@@ -1372,9 +1480,9 @@ def make_output(avac_p, verbosity=False):
     outdir   = avac_p['computation']['output_directory']
     dt       = (tmax-t_0) / nb_simul
 
-    track_mass     = bool(avac_p['computation'].get('track_mass',     True))
+    track_mass     = bool( avac_p['computation'].get('track_mass',     True))
     mass_frac_stop = float(avac_p['computation'].get('mass_frac_stop', 0.03))
-    force_stop     = bool(avac_p['computation'].get('force_stop',     False))
+    force_stop     = bool( avac_p['computation'].get('force_stop',     False))
 
     print(f"AVAC computation: t = {t_0} → {tmax} s  |  {nb_simul} frames  |  dt = {dt:.1f} s")
     if track_mass:
@@ -1414,15 +1522,6 @@ def make_output(avac_p, verbosity=False):
     )
 
     # Thread: write stdout to avac.log in real time
-    def _log_writer():
-        with open("avac.log", "w") as log_file:
-            for line in (process.stdout or []):
-                log_file.write(line)
-                log_file.flush()
-                if verbosity:
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-
     log_thread = _threading.Thread(target=_log_writer, daemon=True)
     log_thread.start()
 
@@ -1438,43 +1537,6 @@ def make_output(avac_p, verbosity=False):
     mass_initial  = None   # set from first frame with wet > 0
     stopped_early = False
 
-    def _read_frame_mass(frame_idx):
-        """Return (total_wet_mass_kg, moving_mass_kg) from fort.q<frame_idx>."""
-        try:
-            from clawpack import pyclaw as _pyclaw  # type: ignore
-            sol = _pyclaw.Solution()
-            fmt = avac_p['output']['output_format']
-            file_format = 'ascii' if fmt == 'ascii' else 'binary'
-            sol.read(frame_idx, path=outdir, file_format=file_format,
-                     read_aux=False)
-            wet_mass = mov_mass = 0.0
-            for state in sol.states:
-                dx_s, dy_s = state.grid.delta
-                h  = state.q[0]
-                hu = state.q[1]
-                hv = state.q[2]
-                wet    = h > dry_tol
-                h_safe = np.where(wet, h, 1.0)
-                spd    = np.where(wet,
-                               np.sqrt((hu/h_safe)**2 + (hv/h_safe)**2),
-                               0.0)
-                wet_mass += rho * np.sum(h[wet]) * dx_s * dy_s
-                mov_mass += rho * np.sum(h[wet & (spd > vel_min)]) * dx_s * dy_s
-            return wet_mass, mov_mass
-        except Exception:
-            return None, None
-
-    def _kill_process():
-        """Terminate the solver. With force_stop, kill the whole process group."""
-        if force_stop:
-            import signal
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass   # process already finished
-        else:
-            process.terminate()
-
     if track_mass:
         # Write CSV header for mass.txt (pandas-friendly)
         with open(mass_file, "w") as _mf:
@@ -1485,25 +1547,6 @@ def make_output(avac_p, verbosity=False):
     # ------------------------------------------------------------------ #
     last_frame = 0
     t_start = _time.time()
-
-    def _print_bar(frames_done):
-        elapsed = _time.time() - t_start
-        pct = int(100 * frames_done / nb_simul)
-        filled = pct // 5
-        bar = "█" * filled + "░" * (20 - filled)
-        if frames_done > 0:
-            eta = elapsed * (nb_simul - frames_done) / frames_done
-            if avac_p['output']['language']=='French':
-                time_str = f"  temps écoulé {elapsed:.0f}s  | fin estimé du calcul dans ~{eta:.0f} s"
-            else:
-                time_str = f"  elapsed {elapsed:.0f}s  estimated time to completion ~{eta:.0f} s" 
-        else:
-            if avac_p['output']['language']=='French':
-                time_str = f"  temps écoulé {elapsed:.0f} s"
-            else:
-                time_str = f"  elapsed {elapsed:.0f} s"
-        sys.stdout.write(f"\r  [{bar}] {pct:3d}%  frame {frames_done}/{nb_simul}{time_str}")
-        sys.stdout.flush()
 
     while process.poll() is None:
         frames_done = len(_glob.glob(os.path.join(outdir, "fort.t????")))
@@ -1663,43 +1706,6 @@ def make_animation(avac_p, verbosity=True):
 ######################
 # Initial conditions #
 ######################
-
-def extract_values(text):
-    """ 
-    Goal: extracting the number and word from a string 
-    Output: Boolean, number, word, remark
-    The Boolean is True when extraction is successful, False otherwise.
-    The remark is a text generated when something unusual is met
-    """
-    # Regular expression to find the first number
-    number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
-    # Search for the first number
-    numbers = re.findall(number_pattern, text)
-    num_count = len(numbers)
-    number_match = numbers[0]
-    # Search for the first word
-    word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only and underscore)
-    # Regular expression to find the first word
-    word_match = re.search(word_pattern, text)
-    if word_pattern == 'cellsize':
-        if num_count > 1:
-            remark = "rectangular cells"
-        else:
-            remark = "square cells"
-    else:
-        if num_count > 1:
-            if word_match is not None:
-                remark = "more than one value for " + word_match.group()
-            else:
-                remark = "more than one value for unknown match"
-        else:
-            remark = ""
-    if number_match and word_match:
-        number = number_match # Extract number
-        word = word_match.group()
-        return True, number,word,remark
-    else:
-        return False
 
 # export-to-Qgis function 
 def export_raster(fname, tableau, xll, yll, cellsize, ndata = -9999, boolean = False):

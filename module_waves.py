@@ -128,8 +128,8 @@ def check_output(Frames):
     ymax_o  = max(yupper)
     delta   = Frames[0].patch.delta
     nombre_patches = len(Frames[0].domain.patches)
-    print(f"* xmin =  {format_m(xmin_o)} et xmax =  {format_m(xmax_o)} ; delta_x = {delta[0]}.")
-    print(f"* ymin =  {format_m(ymin_o)} et ymax = {format_m(ymax_o)} ; delta_y = {delta[1]}.")
+    print(f"* xmin = {format_m(xmin_o)} et xmax = {format_m(xmax_o)} ; delta_x = {delta[0]}.")
+    print(f"* ymin = {format_m(ymin_o)} et ymax = {format_m(ymax_o)} ; delta_y = {delta[1]}.")
     print(f"* Il y a {nombre_patches} patches au temps t = {t_0}.")
     print(f"* Temps initial t = {t_0} ; temps final t = {t_f} ; dt = {dt}.")
 
