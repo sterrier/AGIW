@@ -1382,7 +1382,7 @@ def make_output(avac_p, verbosity=False):
                 if wet is not None:
                     if mass_initial is None and wet > 0:
                         mass_initial = wet
-                    frac = mov / mass_initial if mass_initial else float('nan')
+                    frac = mov / mass_initial if (mass_initial and mov is not None) else float('nan')
                     with open(mass_file, "a") as _mf:
                         _mf.write(f"{t_sim:.3f},{wet:.1f},{mov:.1f},{frac:.4f}\n")
                     # Early-stop check (skip frame 0)
@@ -1506,9 +1506,12 @@ def make_animation(avac_p, verbosity=True):
             cwd=_avac_dir,
         )
         while True:
-            line = process.stdout.readline()
-            _handle_line(line)
-            if not line and process.poll() is not None:
+            if process.stdout is not None:
+                line = process.stdout.readline()
+                _handle_line(line)
+            else:
+                break
+            if process.poll() is not None:
                 break
         return_code = process.wait()
 
@@ -1550,7 +1553,10 @@ def extract_values(text):
             remark = "square cells"
     else:
         if num_count > 1:
-            remark = "more than one value for "+word_match.group()
+            if word_match is not None:
+                remark = "more than one value for " + word_match.group()
+            else:
+                remark = "more than one value for unknown match"
         else:
             remark = ""
     if number_match and word_match:
@@ -1707,8 +1713,11 @@ class WindowSelector:
     sel.window provides the coordinates (xmin, ymin, xmax, ymax) of the window
     """
 
+    
+
     def __init__(self, topo_file, figsize_width=10, contour_interval=25,
                  azdeg=315, altdeg=45, language='English', line=[], step = 100):
+        from matplotlib.backend_bases import MouseButton
         import matplotlib.pyplot as plt
         from matplotlib.widgets import RectangleSelector
 
@@ -1734,7 +1743,7 @@ class WindowSelector:
             ax,
             self._on_select,
             useblit=False,
-            button=[1],
+            button=[MouseButton.LEFT],
             minspanx=1,
             minspany=1,
             spancoords="data",
