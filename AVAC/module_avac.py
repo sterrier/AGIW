@@ -684,7 +684,7 @@ def raster_check(filepath):
             print("* ", rmk)
     else:
         print("Check your file! I am not able to import it as a raster file.")
-    raster_type = raster_determine_file_type(filepath)
+    raster_type = raster_determine_type(filepath)
 
     print()
     print('Raster features')
@@ -715,7 +715,7 @@ def raster_check(filepath):
         return False
 
 # determine_file_type
-def raster_determine_file_type(file):
+def raster_determine_type(file):
     """ 
     Goal: determining the nature of a raster file
     Input: raster *.brage.asc
@@ -816,7 +816,7 @@ def raster_parse_header(source):
     source              = str(source)
     header_size         = raster_header_count_lines(source, num_lines=10)
     header              = [getline(source, i) for i in range(1, header_size + 1)]
-    type_file           = raster_determine_file_type(source)
+    type_file           = raster_determine_type(source)
 
     header_extraction   = np.array([extract_values(string) for string in header])
     failure             = header_extraction[:, 0]
