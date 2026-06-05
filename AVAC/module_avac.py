@@ -113,10 +113,14 @@ def avac_install(**kwargs):
 
     print(f"=> You are using AVAC version {avac_get_version_from_file('Makefile')[1]}.")
 
+def avac_parameters_export(file_name, parameters):
+    with open(file_name, 'w') as file:
+        yaml.dump(parameters, file)
+
 # import_configuration_files
 def avac_parameters_import(file_name):
     """
-    import the configuration and check consistency
+    import the parameters and check consistency
     output: a dictionary with AVAC parameters
     the script can pinpoint potential errors in the parameters
     """
@@ -142,7 +146,7 @@ def avac_parameters_import(file_name):
         else:
             return 0
 
-    print(f"Opening the configuration file {file_name}...")
+    print(f"Opening the file {file_name}...")
 
     with open(file_name, 'r') as file:
         avac_parameters = yaml.safe_load(file)
@@ -212,6 +216,7 @@ def avac_parameters_import(file_name):
                             'verbosity',
                             ]
     keys_release       = [
+                            'areas',
                             'correction_elevation',
                             'correction_slope',
                             'd0',
@@ -232,7 +237,6 @@ def avac_parameters_import(file_name):
     keys_topography    = [
                             'dem',
                             'finer_dem',
-                            'starting_areas',
                             'topo_refinement',
                             'topo_source',
                             ]
@@ -325,6 +329,22 @@ def avac_parameters_import(file_name):
         print(f"* Check variable theta_cr = {avac_parameters['release']['theta_cr']}.")
         print(f"* This value should be expressed in degrees and close to 30.")
         error += 1
+    file_path = avac_parameters['release']['areas']
+    if file_path is None:
+        print("* No starting areas shapefile specified (areas is null).")
+    else:
+        file_path = Path(topo_dir) / file_path
+        if file_path.exists():
+            print(f"* I found the shapefile {file_path} containing the starting areas.")
+        else:
+            print(f"* I failed to import {file_path}! Please check.")
+            error += 1
+        file_path = avac_parameters['release']['areas'][:-3]+'shx'
+        file_path = Path(topo_dir) / file_path
+        if not file_path.exists():
+            print(f"* File {file_path} is missing! Please check. ")
+            print(f"  This file accompanies the shapefile. Find it or reconstruct it using gdal.")
+            error +=1
 
     # Checks rheology parameters
     print("Cheking rheology...")
@@ -376,24 +396,7 @@ def avac_parameters_import(file_name):
         else:
             print(f"* When importing file {avac_parameters['topography']['finer_dem']}, I found errors in the header. Please check.")
             error += 1
-    file_path = avac_parameters['topography']['starting_areas']
-    if file_path is None:
-        print("* No starting areas shapefile specified (starting_areas is null).")
-    else:
-        file_path = Path(topo_dir) / file_path
-        if file_path.exists():
-            print(f"* I found the shapefile {file_path} containing the starting areas.")
-            # print(f"  It seems ok.")
-        else:
-            print(f"* I failed to import {file_path}! Please check.")
-            error += 1
-        file_path = avac_parameters['topography']['starting_areas'][:-3]+'shx'
-        file_path = Path(topo_dir) / file_path
-        if not file_path.exists():
-            print(f"* File {file_path} is missing! Please check. ")
-            print(f"  This file accompanies the shapefile. Find it or reconstruct it using gdal.")
-            error +=1
-
+    
     print()
     if error>0:
         print(f"Error(s) detected: {error}")
@@ -401,11 +404,10 @@ def avac_parameters_import(file_name):
         print("Everything looks fine so far.")
     print()
 
-    # Flatten the configuration dictionary
-    flat_configuration = dict_flatten(avac_parameters)
+    # Flatten the dictionary
+    avac_parameters_flat = dict_flatten(avac_parameters)
 
-    # print("Configuration file:")
-    for key, value in flat_configuration.items():
+    for key, value in avac_parameters_flat.items():
         var_name = key.replace('.', '_')
         globals()[var_name] = value
         # print(f"* {var_name} = {value}")
@@ -671,7 +673,7 @@ def raster_check(filepath):
 
     # Check if all strings are empty
     test_all_remark_empty   = np.all(remarks == '')
-    test_all_success_import = np.all(failure == 'True')
+    test_all_success_import = np.all(failure)
     if test_all_remark_empty and test_all_success_import:
         print("No problem detected in the raster file")
     elif test_all_success_import:
@@ -830,9 +832,9 @@ def raster_parse_header(source):
         nby       = int(dictionnaire['nrows'])
         cell_size = dictionnaire['cellsize']
         ymin      = dictionnaire['ylower']
-        ymax      = ymin + nby * cell_size
+        ymax      = ymin + (nby - 1) * cell_size
         xmin      = dictionnaire['xlower']
-        xmax      = xmin + nbx * cell_size
+        xmax      = xmin + (nbx - 1) * cell_size
     elif type_file == 'esri' and grid_type == 'cell':
         nbx       = int(dictionnaire['ncols'])
         nby       = int(dictionnaire['nrows'])
@@ -1002,7 +1004,7 @@ def raster_read_file(source, nan_replace = False):
     For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
     '''
     source = str(source)
-    xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, _, _, _ = raster_parse_header(source)
+    xmin, xmax, ymin, ymax, nbx, nby, _, header_size, _, _, _ = raster_parse_header(source)
     tab = np.genfromtxt(source, skip_header = header_size, missing_values = '*' ) 
     if nan_replace:
         tab = np.nan_to_num(tab, nan = -9999)
@@ -1015,8 +1017,9 @@ def raster_read_file(source, nan_replace = False):
     init.X = X_fine_grid
     init.Y = Y_fine_grid 
     init.Z = tab[::-1, :]
-    init.y = Y_fine_grid[:, 0]
     init.x = X_fine_grid[0, :]
+    init.y = Y_fine_grid[:, 0]
+
     return init
 
 
@@ -1050,6 +1053,7 @@ def shapefile_import_initial_condition(file):
             print("The CRS does not have an EPSG code, or it is not recognized.")
     else:
         print("The shapefile does not have a defined CRS.")
+
     return areas, nb_areas 
 
 # import_polylines
@@ -1115,33 +1119,38 @@ def shapefile_import_polylines(file = 'profil.shp', language = 'English'):
 # Various functions #
 #####################
 
-def correctingFactor1(s, theta, nu):
+# correctingFactor2
+def correctingFactorElevation(z, zref, gradient_hypso):
+    """
+    Burkard's correction of d_0
+    Input: local elevation, zref: elevation of the measurement station
+           gradient_hypso: hypsometric gradient (additional snow [m] quantity per 100-m altitude range)
+    Output: correction factor
+    """
+
+    return (z - zref) * gradient_hypso
+
+# correctingFactor1
+def correctingFactorSlope(s, theta, nu):
     """
     De Quervain's correction of d_0
     Input: 
         * s: local slope, 
         * theta = critical slope (deg), 
         * nu: de Quervain's coefficient
-    Output: correction as multiplying factor
+    Output: correction factor
     """
 
     theta_rad = np.deg2rad(theta) # conversion to radians
     q         = np.arctan(s)      # conversion from slope to angle (radians)
 
-    if q > np.deg2rad(25):
-       return (np.sin(theta_rad) - nu * np.cos(theta_rad)) / (np.sin(q) - nu * np.cos(q))
-    else:
-       return 0
+    # if q > np.deg2rad(25):
+    #    return (np.sin(theta_rad) - nu * np.cos(theta_rad)) / (np.sin(q) - nu * np.cos(q))
+    # else:
+    #    return 0
 
-def correctingFactor2(z, zref, gradient_hypso):
-    """
-    Burkard's correction of d_0
-    Input: local elevation, zref: elevation of the measurement station
-           gradient_hypso: hypsometric gradient (additional snow [m] quantity per 100-m altitude range)
-    Output: correction
-    """
-
-    return (z - zref) * gradient_hypso / 100
+    formula_result = (np.sin(theta_rad) - nu * np.cos(theta_rad)) / (np.sin(q) - nu * np.cos(q))
+    return np.where(q > np.deg2rad(25), formula_result, 0)
 
 def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points = 1000):
     """
@@ -1232,11 +1241,11 @@ def dict_test_keys(dictionary_tested, dictionary_ref) -> int:
         dictionary_ref = {key: None for key in dictionary_ref}
 
     if not sorted(list(dictionary_tested.keys()) ) == sorted(list(dictionary_ref.keys())):
-        # print('* The configuration file does not satisfy the requirements.')
+        # print('* The file does not satisfy the requirements.')
         difference_1 = sorted(set(dictionary_ref.keys()) - set(dictionary_tested.keys()))
         difference_2 = sorted(set(dictionary_tested.keys()) - set(dictionary_ref.keys()))
         if len(difference_1) > 0:
-            print(f"* There is missing information. Please check your configuration file. Computation will fail otherwise!")
+            print(f"* There is missing information. Please check your file. Computation will fail otherwise!")
             for info in difference_1: print(f"  - Missing key: {info}")
             return 1
         if len(difference_2) > 0:
@@ -1276,7 +1285,8 @@ def extract_values(text):
     
     # Regular expression to find the first word
     word_match = re.search(word_pattern, text)
-    if word_pattern == 'cellsize':
+    # if word_pattern == 'cellsize':
+    if word_match and word_match.group() == 'cellsize':
         if num_count > 1:
             remark = "rectangular cells"
         else:
@@ -1379,14 +1389,14 @@ fn_v        = lambda q: np.where(q[0,:,:]>0, (q[2,:,:]/q[0,:,:]), 0)  # v
 fn_velocity = lambda q: np.where(q[0,:,:]>0, np.sqrt((q[2,:,:]/q[0,:,:])**2+(q[1,:,:]/q[0,:,:])**2), 0)  # v 
 
 
-def make_output(avac_p, verbosity=False):
+def make_output(config, verbosity=False):
     """
     Executes 'make clean', then 'make .output', with a progress bar.
     Progress is tracked by counting fort.t???? files written to _output,
     which is robust regardless of stdout buffering in xgeoclaw.
     
     Input:
-        * avac_p   : dictionary of configuration parameters
+        * config   : dictionary of configuration parameters
         * verbosity: if True, also print every line to the console;
                     otherwise only the progress bar is shown.
     Output: 
@@ -1434,12 +1444,12 @@ def make_output(avac_p, verbosity=False):
         bar = "█" * filled + "░" * (20 - filled)
         if frames_done > 0:
             eta = elapsed * (nb_simul - frames_done) / frames_done
-            if avac_p['output']['language']=='French':
+            if config['output']['language']=='French':
                 time_str = f"  temps écoulé {elapsed:.0f}s  | fin estimé du calcul dans ~{eta:.0f} s"
             else:
                 time_str = f"  elapsed {elapsed:.0f}s  estimated time to completion ~{eta:.0f} s" 
         else:
-            if avac_p['output']['language']=='French':
+            if config['output']['language']=='French':
                 time_str = f"  temps écoulé {elapsed:.0f} s"
             else:
                 time_str = f"  elapsed {elapsed:.0f} s"
@@ -1451,7 +1461,7 @@ def make_output(avac_p, verbosity=False):
         try:
             from clawpack import pyclaw as _pyclaw  # type: ignore
             sol = _pyclaw.Solution()
-            fmt = avac_p['output']['output_format']
+            fmt = config['output']['output_format']
             file_format = 'ascii' if fmt == 'ascii' else 'binary'
             sol.read(frame_idx, path=outdir, file_format=file_format,
                      read_aux=False)
@@ -1474,26 +1484,26 @@ def make_output(avac_p, verbosity=False):
 
     if not isinstance(verbosity, bool):
         verbosity = False
-    t_0      = avac_p['computation'].get('t_0',0)
-    tmax     = avac_p['computation']['t_max']
-    nb_simul = avac_p['computation']['nb_simul']
-    outdir   = avac_p['computation']['output_directory']
+    t_0      = config['computation'].get('t_0',0)
+    tmax     = config['computation']['t_max']
+    nb_simul = config['computation']['nb_simul']
+    outdir   = config['computation']['output_directory']
     dt       = (tmax-t_0) / nb_simul
 
-    track_mass     = bool( avac_p['computation'].get('track_mass',     True))
-    mass_frac_stop = float(avac_p['computation'].get('mass_frac_stop', 0.03))
-    force_stop     = bool( avac_p['computation'].get('force_stop',     False))
+    track_mass     = bool( config['computation'].get('track_mass',     True))
+    mass_frac_stop = float(config['computation'].get('mass_frac_stop', 0.03))
+    force_stop     = bool( config['computation'].get('force_stop',     False))
 
     print(f"AVAC computation: t = {t_0} → {tmax} s  |  {nb_simul} frames  |  dt = {dt:.1f} s")
     if track_mass:
-        if avac_p['output']['language']=='French':
+        if config['output']['language']=='French':
             print(f"  Suivi de la masse : oui  |  seuil d'arrêt : {100*mass_frac_stop:.0f} %  |  "
               f"forcer l'arrêt ? {'Oui' if force_stop else 'Non'}")
         else:
             print(f"  Mass tracking: ON  |  stop threshold: {100*mass_frac_stop:.0f} %  |  "
               f"force stop: {'YES' if force_stop else 'no'}")
     else:
-        if avac_p['output']['language']=='French':
+        if config['output']['language']=='French':
             print("  Suivi de la masse en écoulement : non")
         else:
             print(f"  Mass tracking: off")
@@ -1528,10 +1538,10 @@ def make_output(avac_p, verbosity=False):
     # ------------------------------------------------------------------ #
     # Mass monitoring (optional)                                           #
     # ------------------------------------------------------------------ #
-    rho          = avac_p['rheology']['rho']
-    dry_tol      = avac_p['computation'].get('dry_limit', 0.001)
-    vel_min      = avac_p['computation'].get('mass_threshold_velocity', 0.01)   # m/s — threshold for "moving" cell
-    initial_mass = bool(avac_p['computation'].get('initial_mass', True))
+    rho          = config['rheology']['rho']
+    dry_tol      = config['computation'].get('dry_limit', 0.001)
+    vel_min      = config['computation'].get('mass_threshold_velocity', 0.01)   # m/s — threshold for "moving" cell
+    initial_mass = bool(config['computation'].get('initial_mass', True))
 
     mass_file     = os.path.join(outdir, "mass.txt")
     mass_initial  = None   # set from first frame with wet > 0
@@ -1565,7 +1575,7 @@ def make_output(avac_p, verbosity=False):
                         _mf.write(f"{t_sim:.3f},{wet:.1f},{mov:.1f},{frac:.4f}\n")
                     # Early-stop check (skip frame 0)
                     if frame_idx > 0 and mass_initial and frac < mass_frac_stop and initial_mass:
-                        if avac_p['output']['language']=='French':
+                        if config['output']['language']=='French':
                             sys.stdout.write(
                                 f"\nAVA C: arrêt prématuré car la masse vaut {100*frac:.1f}% "
                                 f"de la masse initiale à t = {t_sim:.1f} s\n")
@@ -1591,28 +1601,28 @@ def make_output(avac_p, verbosity=False):
     sys.stdout.flush()
 
     if stopped_early:
-        if avac_p['output']['language']=='French':
+        if config['output']['language']=='French':
             print(f"Arrêt du calcul, car la masse est : {mass_file}")
         else:
             print(f"Computation stopped early. Mass history: {mass_file}")
     elif process.returncode == 0:
-        if avac_p['output']['language']=='French':
+        if config['output']['language']=='French':
             print("Calcul achevé avec succès.")
         else:
             print("Computation successful.")
     else:
-        if avac_p['output']['language']=='French':
+        if config['output']['language']=='French':
             print("Échec du calcul. Voir le fichier 'avac.log'.")
         else:
             print("Failed! See avac.log.")
 
 # animation
-def make_animation(avac_p, verbosity=True):
+def make_animation(config, verbosity=True):
     """
     Progress bar added
     Execute the animation script make_fgout_animation.py
     Input:
-    * avac_p : dictionary of configuration parameters
+    * config : dictionary of configuration parameters
     * Optional argument -> verbosity (Boolean): If True, displays messages during execution; otherwise,
                             directs the messages to the file 'animation.log'.
     Output: mp4 and html files, animation.log.
@@ -1621,9 +1631,9 @@ def make_animation(avac_p, verbosity=True):
 
     if not isinstance(verbosity, bool):
         verbosity = True
-    print(f"I will make an animation for the {avac_p['animation']['variable']} variable.")
-    tmax   = avac_p['computation']['t_max']
-    n_frames = avac_p['animation']['n_out']
+    print(f"I will make an animation for the {config['animation']['variable']} variable.")
+    tmax   = config['computation']['t_max']
+    n_frames = config['animation']['n_out']
     dt     = tmax / n_frames
     print(f"Times: from t = 0 to t = {tmax} s with a time step dt = {dt} s.")
 
@@ -1694,11 +1704,11 @@ def make_animation(avac_p, verbosity=True):
         return_code = process.wait()
 
     if return_code == 0:
-        return_period = avac_p['release']['period_return']
-        animation_dir = avac_p['animation']['animation_directory']
-        print(f"Creation of the mp4 file: AVAC_animation_for_{avac_p['animation']['variable']}_{return_period}yr.mp4 in the directory {animation_dir}.")
-        if avac_p['animation']['making_html']:
-            print(f"Creation of the html file: AVAC_animation_for_{avac_p['animation']['variable']}_{return_period}yr.html in the directory {animation_dir}.")
+        return_period = config['release']['period_return']
+        animation_dir = config['animation']['animation_directory']
+        print(f"Creation of the mp4 file: AVAC_animation_for_{config['animation']['variable']}_{return_period}yr.mp4 in the directory {animation_dir}.")
+        if config['animation']['making_html']:
+            print(f"Creation of the html file: AVAC_animation_for_{config['animation']['variable']}_{return_period}yr.html in the directory {animation_dir}.")
     else:
         print("Failed! See the log file: animation.log.")
 

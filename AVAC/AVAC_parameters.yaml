@@ -23,7 +23,7 @@ computation:
   topo_dir: /home/steph/AGIW/Topo
   track_mass: true
 date:
-  date: 2026-06-02 16:26:59.684038
+  date: 2026-06-03 16:10:30.702478
 objects:
   line: profil.shp
 output:
@@ -33,10 +33,11 @@ output:
   output_format: binary32
   verbosity: 0
 release:
+  areas: ZA.shp
   correction_elevation: true
   correction_slope: true
   d0: 2.0
-  gradient_hypso: 0.03
+  gradient_hypso: 0.0003
   nu: 0.2
   period_return: 300
   theta_cr: 30
@@ -52,7 +53,5 @@ rheology:
 topography:
   dem: topo2m_c.asc
   finer_dem: topo1m_simple.asc
-  starting_areas: ZA.shp
-  topo_directory: /home/steph/AGIW/Topo
   topo_refinement: false
   topo_source: real_world

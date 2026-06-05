@@ -1,5 +1,5 @@
 animation:
-  animation_directory: "/home/ancey/Lac_Clusaz/Figures/Vid\xE9os"
+  animation_directory: "/home/steph/AGIW/Figures/Vid\xE9os"
   label_step: 500
   making_html: false
   n_out: 150
@@ -20,7 +20,7 @@ computation:
   output_directory: _output
   refinement: 1
   t_max: 150
-  topo_dir: /home/ancey/Lac_Clusaz/Topo
+  topo_dir: /home/steph/AGIW/Topo
   track_mass: true
 dem_extent:
   cell_size: 2.0
@@ -41,12 +41,12 @@ gauges:
   gauge_recording: true
   gauges:
   - - 1
-    - 965780.0
-    - 6536190.0
+    - 965560.025847458
+    - 6536375.762824026
 output:
-  language: French
   delta_t: 1
-  output_directory: _output100
+  language: French
+  output_directory: _output300
   output_format: binary32
   verbosity: 0
 refinement:
@@ -55,19 +55,20 @@ refinement:
   finer_dem: None
   topo_refinement: false
 release:
+  areas: ZA.shp
   correction_elevation: true
   correction_slope: true
-  d0: 1.6
-  gradient_hypso: 0.03
+  d0: 2.0
+  gradient_hypso: 0.0003
   nu: 0.2
-  period_return: 100
+  period_return: 300
   theta_cr: 30
-  z_ref: 1300
+  z_ref: 2000
 rheology:
   C: 0
   beta: 0.0
   model: Voellmy
-  mu: 0.25
+  mu: 0.2
   rho: 300
   u_cr: 0
-  xi: 1100
+  xi: 1400
