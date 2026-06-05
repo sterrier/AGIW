@@ -271,11 +271,11 @@ def avac_parameters_import(file_name):
     error += is_integer('computation', 'refinement')
     if avac_parameters['computation']['cfl_max'] > 1 or avac_parameters['computation']['cfl_max'] < 0:
         print(f"Check variable cfl_max = {avac_parameters['computation']['cfl_max']}")
-        print(f"This value should be an integer in the 0.1-1 range.")
+        print(f"This value should be a float in the 0.1-1 range.")
         error += 1
     if avac_parameters['computation']['cfl_target'] > avac_parameters['computation']['cfl_max']:
-        print(f"Check variable cfl_target = {avac_parameters['computation']['cfl_max']}")
-        print(f"This value cannot be larger car cfl_max = {avac_parameters['computation']['cfl_max']}.")
+        print(f"Check variable cfl_target = {avac_parameters['computation']['cfl_target']}")
+        print(f"This value cannot be larger than cfl_max = {avac_parameters['computation']['cfl_max']}.")
         error += 1
     if avac_parameters['computation']['refinement'] < 1 or avac_parameters['computation']['refinement'] > 6:
         print(f"Check variable refinement = {avac_parameters['computation']['refinement']}.")
@@ -283,13 +283,13 @@ def avac_parameters_import(file_name):
     if topo_source == 'real_world':
         if avac_parameters['computation']['boundary'] not in boundary_formats:
             print(f"The boundary condition {avac_parameters['computation']['boundary'] } is unknown!")
-            print("The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
+            print(f"The only current possibilities are: {boundary_formats}.")
         if avac_parameters['computation']['boundary'] == 'user':
             print("This is not implemented by default. Check file bc2.f90.")
     else:
         if avac_parameters['computation']['boundary_south'] not in boundary_formats:
             print(f"The boundary condition {avac_parameters['computation']['boundary_south'] } is unknown!")
-            print("The only current possibilities are: 'ascii', 'binary64' or 'binary32'.")
+            print(f"The only current possibilities are: {boundary_formats}.")
         if avac_parameters['computation']['boundary_south'] == 'user':
             print("This is not implemented by default. Check file bc2.f90.")
 
@@ -349,7 +349,7 @@ def avac_parameters_import(file_name):
     # Checks rheology parameters
     print("Cheking rheology...")
     error += dict_test_keys(avac_parameters['rheology'], keys_rheology)
-    if avac_parameters['rheology']['beta'] < 0 or avac_parameters['rheology']['u_cr'] > 1.5:
+    if avac_parameters['rheology']['beta'] < 0 or avac_parameters['rheology']['beta'] > 1.5:
         print(f"* Check variable beta = {avac_parameters['rheology']['beta']}.")
         print(f"* This value should be in the 0-1.5 range.")
         error += 1
@@ -379,13 +379,13 @@ def avac_parameters_import(file_name):
     topo_refinement = avac_parameters['topography']['topo_refinement']
     if file_path.exists():
         print(f"* I found the DEM file {file_path}.")
-    test_success = [bool(chain) for chain in raster_read_features(file_path)[8]]
-    if np.all(np.array(test_success)):
-        # print("* File import raises no issue.")
-        pass
-    else:
-        print(f"* When importing file {avac_parameters['topography']['dem']} from {topo_dir}, I found errors in the header. Please check.")
-        error += 1
+        test_success = [bool(chain) for chain in raster_read_features(file_path)[8]]
+        if np.all(np.array(test_success)):
+            # print("* File import raises no issue.")
+            pass
+        else:
+            print(f"* When importing file {avac_parameters['topography']['dem']} from {topo_dir}, I found errors in the header. Please check.")
+            error += 1
     if topo_refinement:
         fine_topo_path = Path(topo_dir) / avac_parameters['topography']['finer_dem']
         if fine_topo_path.exists():
