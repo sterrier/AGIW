@@ -554,13 +554,13 @@ def claw_export_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topograp
     Context: this function provides raster files ~40 % smaller than the clawpack default '%15.7e'.
     Use '%1i' (boolean=True) for integer masks.
     Input:
-        - xmin,xmax,ymin,ymax : extent of the digital elevation model
-        - nbx,nby : numbers of rows and columns
+        - xmin, xmax, ymin, ymax : extent of the digital elevation model
+        - nbx, nby : numbers of rows and columns
         - alt: matrix of elevation
         - name_file: name of the file to which the data are exported
         - boolean: if true, exports only 0 or 1 (to create a mask)
         - Z_format: controls the ASCII format of elevation values. 
-          Default '%9.2f' (1 cm precision) is adequate for LiDAR DEMs and yields files
+          Default '%9.2f' (1 cm precision) is adequate for LiDAR DEMs
     Output:
         - raster file 'name_file' compatible with clawpack (topotype = 3)
     """
@@ -574,7 +574,7 @@ def claw_export_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topograp
     cell_size_y  = (ymax - ymin) / (nby - 1)
 
     # Checks
-    deviation    = abs((cell_size-cell_size_y)/cell_size)
+    deviation    = abs((cell_size - cell_size_y) / cell_size)
     if deviation > 0.01: 
             if language == 'French':
                 print(f"* Attention, je trouve dx = {cell_size:.2f} m et dy = {cell_size_y:.2f} m.")
@@ -652,6 +652,9 @@ def claw_export_initiation_file(topo_file, zi, filename = 'init.xyz'):
 ##########
 # Raster #
 ##########
+# Two types of grid registration:
+# pixel = cell  xllcenter = xlower  n x m cells -> n x m data           (most common, world file, x)    
+# grid  = node  xllcorner           n x m cells -> (n+1) x (m+1) data                                   topotype = 1 (xyz) and 2 (header + list) 
 
 # check_raster
 def raster_check(filepath):
@@ -668,7 +671,7 @@ def raster_check(filepath):
         print(f"File {filepath} exists in the working directory.")
 
     print()
-    xmin, xmax, ymin, ymax, nbx, nby, cell_size, dico, failure, remarks, grid_type = raster_read_features(filepath)
+    xmin, xmax, ymin, ymax, nbx, nby, cell_size, dico, file_type, grid_type, failure, remarks = raster_read_features(filepath)
     raster_features = [['xmin',xmin],['xmax',xmax],['ymin',ymin],['ymax',ymax],['nbx',nbx],['nby',nby],['cell size',cell_size]]
 
     # Check if all strings are empty
@@ -684,11 +687,10 @@ def raster_check(filepath):
             print("* ", rmk)
     else:
         print("Check your file! I am not able to import it as a raster file.")
-    raster_type = raster_determine_type(filepath)
 
     print()
     print('Raster features')
-    print(f"* The raster format is: {raster_type}.")   
+    print(f"* The raster format is: {file_type}.")   
     print(f"* The grid type is: {grid_type}.")      
 
     # Format the numbers in raster_features
@@ -715,6 +717,7 @@ def raster_check(filepath):
         return False
 
 # determine_file_type
+# to be deleted (replaced by raster_parse_header) once adapted everywhere
 def raster_determine_type(file):
     """ 
     Goal: determining the nature of a raster file
@@ -816,53 +819,64 @@ def raster_parse_header(source):
     source              = str(source)
     header_size         = raster_header_count_lines(source, num_lines=10)
     header              = [getline(source, i) for i in range(1, header_size + 1)]
-    type_file           = raster_determine_type(source)
 
     header_extraction   = np.array([extract_values(string) for string in header])
     failure             = header_extraction[:, 0]
-    values              = [float(val) for val in header_extraction[:, 1]]
+    values              = header_extraction[:, 1]
     keys                = header_extraction[:, 2]
     remarks             = header_extraction[:, 3]
+    dictionnaire        = {keys[k]: values[k] for k in range(header_size)}
 
-    grid_type = 'node' if 'xllcenter' in keys else 'cell'
-    dictionnaire = {keys[k]: values[k] for k in range(header_size)}
+    if 'north' in keys:
+        grid_type = 'corner'
+        type_file = 'grass'
+    elif 'xlower' in keys:
+        grid_type = 'center'
+        type_file = 'claw'
+    elif 'xllcenter' in keys or 'xllcorner' in keys:
+        grid_type = 'center' if 'xllcenter' in keys else 'corner'
+        type_file = 'esri'
+    else:
+        grid_type = 'unknown'
+        type_file = 'unknown'
+        print(f'Error!I cannot determine the type of the file {source}.')
 
-    if type_file == 'claw':
-        nbx       = int(dictionnaire['ncols'])
-        nby       = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin      = dictionnaire['ylower']
-        ymax      = ymin + (nby - 1) * cell_size
-        xmin      = dictionnaire['xlower']
-        xmax      = xmin + (nbx - 1) * cell_size
-    elif type_file == 'esri' and grid_type == 'cell':
-        nbx       = int(dictionnaire['ncols'])
-        nby       = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin      = dictionnaire['yllcorner']
-        ymax      = ymin + (nby - 1) * cell_size
-        xmin      = dictionnaire['xllcorner']
-        xmax      = xmin + (nbx - 1) * cell_size
-    elif type_file == 'esri' and grid_type == 'node':
-        nbx       = int(dictionnaire['ncols'])
-        nby       = int(dictionnaire['nrows'])
-        cell_size = dictionnaire['cellsize']
-        ymin      = dictionnaire['yllcenter'] - cell_size / 2
-        ymax      = ymin + nby * cell_size
-        xmin      = dictionnaire['xllcenter'] - cell_size / 2
-        xmax      = xmin + nbx * cell_size
-    elif type_file == 'grass':
+    if type_file == 'grass':
+        nbx       = int(dictionnaire['cols'])
+        nby       = int(dictionnaire['rows'])
         ymin      = dictionnaire['south']
         ymax      = dictionnaire['north']
         xmin      = dictionnaire['west']
         xmax      = dictionnaire['east']
-        nbx       = int(dictionnaire['cols'])
-        nby       = int(dictionnaire['rows'])
         cell_size = (xmax - xmin) / nbx
+    elif type_file == 'claw':
+        nbx       = int(dictionnaire['ncols'])
+        nby       = int(dictionnaire['nrows'])
+        cell_size = dictionnaire['cellsize']
+        xmin      = dictionnaire['xlower'] - cell_size / 2
+        xmax      = xmin + nbx * cell_size
+        ymin      = dictionnaire['ylower'] - cell_size / 2
+        ymax      = ymin + nby * cell_size
+    elif type_file == 'esri' and grid_type == 'corner':
+        nbx       = int(dictionnaire['ncols'])
+        nby       = int(dictionnaire['nrows'])
+        cell_size = dictionnaire['cellsize']
+        xmin      = dictionnaire['xllcorner']
+        xmax      = xmin + nbx * cell_size
+        ymin      = dictionnaire['yllcorner']
+        ymax      = ymin + nby * cell_size
+    elif type_file == 'esri' and grid_type == 'center':
+        nbx       = int(dictionnaire['ncols'])
+        nby       = int(dictionnaire['nrows'])
+        cell_size = dictionnaire['cellsize']
+        xmin      = dictionnaire['xllcenter'] - cell_size / 2
+        xmax      = xmin + nbx * cell_size
+        ymin      = dictionnaire['yllcenter'] - cell_size / 2
+        ymax      = ymin + nby * cell_size
     else:
         raise ValueError(f"Unrecognised file type '{type_file}' or grid_type '{grid_type}'")
 
-    return xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, failure, remarks, grid_type
+    return xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, type_file, grid_type, failure, remarks
 
 # plot_topo
 def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval = 20,
@@ -981,7 +995,7 @@ def raster_read_features(source):
     output: xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary, failure, remarks
     '''
 
-    xmin, xmax, ymin, ymax, nbx, nby, cell_size, _, failure, remarks, grid_type = raster_parse_header(source)
+    xmin, xmax, ymin, ymax, nbx, nby, cell_size, _, file_type, grid_type, failure, remarks = raster_parse_header(source)
     dictionary_extent = {
                         'xmin':         xmin,
                         'xmax':         xmax,
@@ -993,7 +1007,7 @@ def raster_read_features(source):
                         'nodata_value': -9999,
                         }
 
-    return xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary_extent, failure, remarks, grid_type 
+    return xmin, xmax, ymin, ymax, nbx, nby, cell_size, dictionary_extent, file_type, grid_type , failure, remarks
 
 # reading_raster_file
 def raster_read_file(source, nan_replace = False): 
@@ -1004,7 +1018,8 @@ def raster_read_file(source, nan_replace = False):
     For more information, see https://www.clawpack.org/grid_registration.html#grid-registration 
     '''
     source = str(source)
-    xmin, xmax, ymin, ymax, nbx, nby, _, header_size, _, _, _ = raster_parse_header(source)
+    xmin, xmax, ymin, ymax, nbx, nby, _, header_size, _, _, _, _ = raster_parse_header(source)
+    
     tab = np.genfromtxt(source, skip_header = header_size, missing_values = '*' ) 
     if nan_replace:
         tab = np.nan_to_num(tab, nan = -9999)
@@ -1272,38 +1287,36 @@ def extract_values(text):
     The remark is a text generated when something unusual is met
     """
 
-    # Regular expression to find the first number
-    number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
+    # Regular expression patterns
+    pattern_number = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
+    pattern_word = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only and underscore)
     
     # Search for the first number
-    numbers = re.findall(number_pattern, text)
+    numbers = re.findall(pattern_number, text)
     num_count = len(numbers)
-    number_match = numbers[0]
-    
-    # Search for the first word
-    word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only and underscore)
+    match_number = numbers[0]
     
     # Regular expression to find the first word
-    word_match = re.search(word_pattern, text)
+    match_word = re.search(pattern_word, text)
     # if word_pattern == 'cellsize':
-    if word_match and word_match.group() == 'cellsize':
+    if match_word and match_word.group() == 'cellsize':
         if num_count > 1:
             remark = "rectangular cells"
         else:
             remark = "square cells"
     else:
         if num_count > 1:
-            if word_match is not None:
-                remark = "more than one value for " + word_match.group()
+            if match_word is not None:
+                remark = "more than one value for " + match_word.group()
             else:
                 remark = "more than one value for unknown match"
         else:
             remark = ""
     
-    if number_match and word_match:
-        number = number_match # Extract number
-        word = word_match.group()
-        return True, number, word, remark
+    if match_number and match_word:
+        number = match_number # Extract number
+        word = match_word.group()
+        return True, float(number), word, remark
     else:
         return False
 

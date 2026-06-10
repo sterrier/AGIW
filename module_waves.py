@@ -57,8 +57,8 @@ def check_configuration(config, topo_dir, damping_max= 0.4):
     mask_path = topo_dir / topo_files.get('mask_raster', '')
     if mask_path.exists() and lake_topo_path.exists():
         try:
-            _, _, _, _, _, _, cs_mask, _, _, _, _ = raster_read_features(mask_path)
-            _, _, _, _, _, _, cs_mnt,  _, _, _, _ = raster_read_features(lake_topo_path)
+            _, _, _, _, _, _, cs_mask, _, _, _, _, _ = raster_read_features(mask_path)
+            _, _, _, _, _, _, cs_mnt,  _, _, _, _, _ = raster_read_features(lake_topo_path)
             if abs(cs_mask - cs_mnt) > 1e-6:
                 errors.append(
                     f"  [topo_files/lake] Incohérence de maille : "
@@ -194,7 +194,7 @@ def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,language='French',m
     import subprocess
     from module_avac import raster_read_features, raster_read_file, claw_export_dem
     xmin, xmax, ymin, ymax, nbx, nby, cell_size, \
-        dictionary_extent, failure, remarks, grid_type = raster_read_features(topo_dir / lake['topography'])
+        dictionary_extent, _, grid_type, failure, remarks = raster_read_features(topo_dir / lake['topography'])
     if mask_cell_size is not None:
         cell_size = mask_cell_size
     # adresses
@@ -226,8 +226,8 @@ def create_mask(proj_dir,topo_dir,topo_files,lake,erase=True,language='French',m
 
     # Export to geoclaw raster file that can be read by geoclaw
     mask_r = raster_read_file(str(out_asc))
-    claw_export_dem(mask_r.x.min(),mask_r.x.max(),mask_r.y.min(),mask_r.y.max(),mask_r.Z.shape[1],mask_r.Z.shape[0],
-                    mask_r.Z,name_file =str(path_mask) ,boolean = True, language = language )
+    claw_export_dem(mask_r.x.min(), mask_r.x.max(), mask_r.y.min(), mask_r.y.max(), mask_r.Z.shape[1], mask_r.Z.shape[0],
+                    mask_r.Z, name_file =str(path_mask), boolean = True, language = language )
     # Erasing the dummy files
     if erase: 
         out_asc.unlink()
