@@ -1037,6 +1037,102 @@ def raster_read_file(source, nan_replace = False):
 
     return init
 
+def raster_to_topotools(source, nan_replace=False):
+    """
+    Read any supported raster format and return a topotools.Topography object.
+
+    Supported formats:
+    - GeoTIFF (.tif / .tiff)         — via rasterio (must be installed)
+    - ESRI corner  (xllcorner)       — via topotools (topo_type=3)
+    - ESRI center  (xllcenter)       — via topotools (topo_type=3)
+    - Clawpack/GeoClaw (xlower)      — via topotools (topo_type=3)
+    - GRASS (north/south/east/west)  — parsed inline
+
+    Input:
+        * source      : path to the raster file (str or Path)
+        * nan_replace : if True, replace NaN values with -9999 (default False)
+    Output:
+        * topotools.Topography with x, y, X, Y, Z attributes set
+    """
+    source = str(source)
+    ext    = Path(source).suffix.lower()
+
+    # ------------------------------------------------------------------ #
+    # GeoTIFF                                                              #
+    # ------------------------------------------------------------------ #
+    if ext in ('.tif', '.tiff'):
+        try:
+            import rasterio
+        except ImportError:
+            raise ImportError("rasterio is required to read GeoTIFF files: pip install rasterio")
+
+        with rasterio.open(source) as src:
+            Z     = src.read(1).astype(float)
+            if src.nodata is not None:
+                Z[Z == src.nodata] = np.nan
+            t     = src.transform
+            ncols = src.width
+            nrows = src.height
+            dx    = t.a
+            dy    = -t.e            # t.e is negative for north-up rasters
+            xmin  = t.c             # left edge of leftmost column
+            ymax  = t.f             # top  edge of topmost row
+            xmax  = xmin + ncols * dx
+            ymin  = ymax - nrows * dy
+
+        if nan_replace:
+            Z = np.nan_to_num(Z, nan=-9999)
+
+        topo   = topotools.Topography()
+        topo.x = np.linspace(xmin, xmax, ncols)
+        topo.y = np.linspace(ymin, ymax, nrows)
+        topo.Z = np.flipud(Z)       # clawpack convention: row 0 = south
+        return topo
+
+    # ------------------------------------------------------------------ #
+    # ASCII — detect GRASS vs ESRI/Clawpack from the first header keyword #
+    # ------------------------------------------------------------------ #
+    with open(source) as _f:
+        first_keyword = _f.readline().strip().lower().split(':')[0].split()[0]
+    is_grass = first_keyword in ('north', 'south', 'east', 'west')
+
+    if is_grass:
+        kv = {}
+        with open(source) as _f:
+            for line in _f:
+                line = line.strip()
+                if ':' not in line:
+                    break           # end of header, data starts
+                k, v = line.split(':', 1)
+                kv[k.strip().lower()] = v.strip()
+        nrows     = int(kv['rows'])
+        ncols     = int(kv['cols'])
+        xmin      = float(kv['west'])
+        xmax      = float(kv['east'])
+        ymin      = float(kv['south'])
+        ymax      = float(kv['north'])
+        header_lines = len(kv)
+
+        Z = np.genfromtxt(source, skip_header=header_lines, missing_values='*')
+        if nan_replace:
+            Z = np.nan_to_num(Z, nan=-9999)
+
+        topo   = topotools.Topography()
+        topo.x = np.linspace(xmin, xmax, ncols)
+        topo.y = np.linspace(ymin, ymax, nrows)
+        topo.Z = Z[::-1, :]         # GRASS: row 0 = north → flip to south
+        return topo
+
+    else:
+        # ESRI corner, ESRI center, or Clawpack — topotools handles all three
+        topo = topotools.Topography(path=source, topo_type=3)
+        topo.read(mask=True)
+        if nan_replace:
+            topo.Z = np.ma.filled(topo.Z, -9999)
+        else:
+            topo.Z = np.ma.filled(topo.Z, np.nan)
+        return topo
+
 
 #############
 # Shapefile #
