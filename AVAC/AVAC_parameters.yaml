@@ -23,7 +23,7 @@ computation:
   topo_dir: /home/steph/AGIW/Topo
   track_mass: true
 date:
-  date: 2026-06-05 12:06:55.925053
+  date: 2026-06-10 10:51:40.512087
 objects:
   line: profil.shp
 output:

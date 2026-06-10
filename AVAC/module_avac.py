@@ -373,28 +373,28 @@ def avac_parameters_import(file_name):
         print(f"* This value should be in the 100-10,000 range.")
 
     # Checks topography
-    print("Cheking topography...")
+    print("Checking topography...")
     error += dict_test_keys(avac_parameters['topography'], keys_topography)
     file_path = Path(topo_dir) / avac_parameters['topography']['dem']
     topo_refinement = avac_parameters['topography']['topo_refinement']
     if file_path.exists():
         print(f"* I found the DEM file {file_path}.")
-        test_success = [bool(chain) for chain in raster_read_features(file_path)[8]]
-        if np.all(np.array(test_success)):
-            # print("* File import raises no issue.")
-            pass
-        else:
-            print(f"* When importing file {avac_parameters['topography']['dem']} from {topo_dir}, I found errors in the header. Please check.")
+        try:
+            raster_to_topotools(file_path)
+        except Exception as e:
+            print(f"* When importing file {avac_parameters['topography']['dem']} from {topo_dir}, I found errors. Please check.")
+            print(f"  ({e})")
             error += 1
     if topo_refinement:
         fine_topo_path = Path(topo_dir) / avac_parameters['topography']['finer_dem']
         if fine_topo_path.exists():
             print(f"* Finer topography: I found the DEM file {fine_topo_path} in the directory {topo_dir}.")
-        test_success = [bool(chain) for chain in raster_read_features(fine_topo_path)[8]]
-        if np.all(np.array(test_success)):
+        try:
+            raster_to_topotools(fine_topo_path)
             print(f"* File import raises no issue.")
-        else:
-            print(f"* When importing file {avac_parameters['topography']['finer_dem']}, I found errors in the header. Please check.")
+        except Exception as e:
+            print(f"* When importing file {avac_parameters['topography']['finer_dem']}, I found errors. Please check.")
+            print(f"  ({e})")
             error += 1
     
     print()
@@ -899,6 +899,9 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
     Output:
         * fig, ax, x0, y0  (where x0, y0: southwest corner of the raster in absolute coordinates)
     """
+    if topo_file is None:
+        raise ValueError("raster_plot_topo: topo_file is None — check that the DEM was loaded successfully.")
+
     import  matplotlib.colors as mcolors
     import  matplotlib.pyplot as plt
     from    matplotlib.ticker import FuncFormatter
