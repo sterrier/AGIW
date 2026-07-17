@@ -879,8 +879,17 @@ def raster_parse_header(source):
     return xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, type_file, grid_type, failure, remarks
 
 # plot_topo
-def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval = 20,
-              azdeg = 315, altdeg = 45, grid = 200, ylabel_position = "left", resampling = None):
+def raster_plot_topo_old(
+        topo_file, 
+        ax = None, 
+        figsize_width = 10, 
+        contour_interval = 20,
+        azdeg = 315, 
+        altdeg = 45, 
+        grid = 200, 
+        ylabel_position = "left", 
+        resampling = None
+        ):
     """
     Draws the topographic background (hillshade + contour lines) on a matplotlib axis.
 
@@ -907,17 +916,21 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
     from    matplotlib.ticker import FuncFormatter
     import  math
 
-    # Origin and resolution
-    x0 = float(topo_file.x[0])
-    y0 = float(topo_file.y[0])
-    dx = float(topo_file.x[-1] - topo_file.x[0])
-    dy = float(topo_file.y[-1] - topo_file.y[0])
+    # Cell size and SW corner (cell edge)
+    cell_dx = float(topo_file.delta[0])
+    cell_dy = float(topo_file.delta[1])
+    x0 = float(topo_file.x[0])  - cell_dx / 2   # west  edge
+    y0 = float(topo_file.y[0])  - cell_dy / 2   # south edge
+    x1 = float(topo_file.x[-1]) + cell_dx / 2   # east  edge
+    y1 = float(topo_file.y[-1]) + cell_dy / 2   # north edge
+    width  = x1 - x0
+    height = y1 - y0
 
     # Create figure if not passed as argument
     if ax is None:
         w = figsize_width
-        h = round(w * dy / dx, 2)
-        fig, ax = plt.subplots(figsize = (w, h), layout = 'constrained')
+        h = round(w * height / width, 2)
+        fig, ax = plt.subplots(figsize=(w, h), layout = 'constrained')
         try:
             if hasattr(fig.canvas, 'header_visible'):
                 setattr(fig.canvas, 'header_visible', False)  # ipympl uniquement
@@ -947,7 +960,8 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
     # Hillshade
     ls = mcolors.LightSource(azdeg = azdeg, altdeg = altdeg)
     cell_size = float(x_rel[1] - x_rel[0])
-    hs = ls.hillshade(Z, vert_exag = 2, dx = cell_size, dy = cell_size)
+    # hillshade expects row 0 = north (image convention); Z has row 0 = south → flip, shade, flip back
+    hs = np.flipud(ls.hillshade(np.flipud(Z), vert_exag = 2, dx = cell_size, dy = cell_size))
     if resampling is None:
         ax.pcolormesh(XX, YY, hs, cmap = "gray", shading = "auto", alpha = 0.8)
     else:
@@ -964,11 +978,11 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
 
     ax.set_aspect("equal")
 
-    # Ticks
-    x_ticks = np.arange(math.ceil(x0 / grid) * grid, x0 + dx + grid, grid) - x0
-    y_ticks = np.arange(math.ceil(y0 / grid) * grid, y0 + dy + grid, grid) - y0
-    x_ticks = x_ticks[(x_ticks >= 0) & (x_ticks <= dx)]
-    y_ticks = y_ticks[(y_ticks >= 0) & (y_ticks <= dy)]
+    # Ticks at absolute-coord multiples of grid, converted to relative coords
+    x_ticks = np.arange(math.ceil(x0 / grid) * grid, x1, grid) - x0
+    y_ticks = np.arange(math.ceil(y0 / grid) * grid, y1, grid) - y0
+    x_ticks = x_ticks[(x_ticks >= 0) & (x_ticks <= width)]
+    y_ticks = y_ticks[(y_ticks >= 0) & (y_ticks <= height)]
     ax.set_xticks(x_ticks)
     ax.set_yticks(y_ticks)
 
@@ -987,6 +1001,123 @@ def raster_plot_topo(topo_file, ax = None, figsize_width = 10, contour_interval 
     ax.grid(linewidth = 0.7, alpha = 0.85)
 
     return fig, ax, x0, y0
+
+# plot_topo
+def raster_plot_topo(
+        topo_file,
+        ax = None,
+        figsize_width = 10,
+        contour_interval = 20,
+        azdeg = 315,
+        altdeg = 45,
+        grid = 200,
+        ylabel_position = "left",
+        resampling = None
+        ):
+    """
+    Same as raster_plot_topo but plots in absolute coordinates (no x0/y0 offset).
+    Callers can pass absolute coordinates directly to ax.plot() etc.
+
+    Output:
+        * fig, ax
+    """
+    if topo_file is None:
+        raise ValueError("raster_plot_topo2: topo_file is None — check that the DEM was loaded successfully.")
+
+    import  matplotlib.colors as mcolors
+    import  matplotlib.pyplot as plt
+    from    matplotlib.ticker import FuncFormatter
+    import  math
+
+    # Cell size, centers and edges
+    cell_dx = float(topo_file.delta[0])
+    cell_dy = float(topo_file.delta[1])
+    xmin_c = float(topo_file.x[0])       # west  cell center
+    xmax_c = float(topo_file.x[-1])      # east  cell center
+    ymin_c = float(topo_file.y[0])       # south cell center
+    ymax_c = float(topo_file.y[-1])      # north cell center
+    xmin_e = xmin_c - cell_dx / 2        # west  edge
+    xmax_e = xmax_c + cell_dx / 2        # east  edge
+    ymin_e = ymin_c - cell_dy / 2        # south edge
+    ymax_e = ymax_c + cell_dy / 2        # north edge
+
+    if ax is None:
+        w = figsize_width
+        h = round(w * (ymax_e - ymin_e) / (xmax_e - xmin_e), 2)
+        fig, ax = plt.subplots(figsize=(w, h), layout = 'constrained')
+        try:
+            if hasattr(fig.canvas, 'header_visible'):
+                setattr(fig.canvas, 'header_visible', False)
+        except AttributeError:
+            pass
+    else:
+        fig = ax.figure
+
+    Z = topo_file.Z
+    nrows, ncols = Z.shape
+    if ncols != len(topo_file.x) or nrows != len(topo_file.y):
+        warnings.warn(
+            f"Z.shape ({nrows}, {ncols}) does not match "
+            f"len(x)={len(topo_file.x)}, len(y)={len(topo_file.y)}. "
+            "Recomputing coordinate arrays from Z.shape — check your topo object.",
+            stacklevel = 2
+        )
+        x_abs = np.linspace(xmin_c, xmax_c, ncols)
+        y_abs = np.linspace(ymin_c, ymax_c, nrows)
+    else:
+        x_abs = topo_file.x    # cell centers
+        y_abs = topo_file.y    # cell centers
+    XX, YY = np.meshgrid(x_abs, y_abs)
+
+    # Hillshade
+    ls = mcolors.LightSource(azdeg = azdeg, altdeg = altdeg)
+    cell_size = float(x_abs[1] - x_abs[0])
+    hs = np.flipud(ls.hillshade(np.flipud(Z), vert_exag = 2, dx = cell_size, dy = cell_size))
+    if resampling is None:
+        ax.pcolormesh(XX, YY, hs, cmap = "gray", shading = "auto", alpha = 0.8)
+    else:
+        ax.pcolormesh(XX[::resampling,::resampling], YY[::resampling,::resampling], hs[::resampling,::resampling], cmap = "gray", shading = "auto", alpha = 0.8)
+
+    # Contours
+    major_interval = contour_interval * 5
+    zmin_c = int(np.nanmin(Z) // contour_interval) * contour_interval
+    zmax_c = int(np.nanmax(Z) // contour_interval + 1) * contour_interval
+    zmin_major = int(np.nanmin(Z) // major_interval) * major_interval
+    zmax_major = int(np.nanmax(Z) // major_interval + 1) * major_interval
+    levels_minor = np.arange(zmin_c, zmax_c, contour_interval)
+    levels_major = np.arange(zmin_major, zmax_major, major_interval)
+    ax.contour(XX, YY, Z, levels = levels_minor, colors = "k", linewidths = 0.4, alpha = 0.5)
+    cs = ax.contour(XX, YY, Z, levels = levels_major, colors = "k", linewidths = 0.9, alpha = 0.8)
+    ax.clabel(cs, fmt="%d m", fontsize = 7, inline = True)
+
+    ax.set_aspect("equal")
+    ax.set_xlim(xmin_e, xmax_e)
+    ax.set_ylim(ymin_e, ymax_e)
+    ax.ticklabel_format(style="plain", useOffset=False)
+
+    # Ticks at multiples of grid, bounded by cell edges
+    x_ticks = np.arange(math.ceil(xmin_e / grid) * grid, xmax_e, grid)
+    y_ticks = np.arange(math.ceil(ymin_e / grid) * grid, ymax_e, grid)
+    x_ticks = x_ticks[(x_ticks >= xmin_e) & (x_ticks <= xmax_e)]
+    y_ticks = y_ticks[(y_ticks >= ymin_e) & (y_ticks <= ymax_e)]
+    ax.set_xticks(x_ticks)
+    ax.set_yticks(y_ticks)
+
+    # ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}"))
+    # ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}"))
+    if ylabel_position == 'right':
+        ax.yaxis.tick_right()
+        ax.yaxis.set_label_position("right")
+    else:
+        ax.yaxis.tick_left()
+        ax.yaxis.set_label_position("left")
+    ax.tick_params(axis = "y", labelrotation = 90)
+    plt.setp(ax.get_yticklabels(), va="center")
+    ax.set_xlabel(r"$x$  [m]")
+    ax.set_ylabel(r"$y$  [m]")
+    ax.grid(linewidth = 0.7, alpha = 0.85)
+
+    return fig, ax
 
 # reading_raster_file_features
 def raster_read_features(source): 
@@ -1077,19 +1208,22 @@ def raster_to_topotools(source, nan_replace=False):
             ncols = src.width
             nrows = src.height
             dx    = t.a
-            dy    = -t.e            # t.e is negative for north-up rasters
-            xmin  = t.c             # left edge of leftmost column
-            ymax  = t.f             # top  edge of topmost row
-            xmax  = xmin + ncols * dx
-            ymin  = ymax - nrows * dy
+            dy    = -t.e           # t.e is negative for north-up rasters
+            xmin  = t.c + dx / 2   # cell centers
+            ymax  = t.f + t.e / 2  # cell centers (t.e < 0)
+            xmax  = xmin + (ncols - 1) * dx
+            ymin  = ymax - (nrows - 1) * dy
 
         if nan_replace:
             Z = np.nan_to_num(Z, nan=-9999)
+        else:
+            Z = np.ma.masked_invalid(Z)
 
-        topo   = topotools.Topography()
-        topo.x = np.linspace(xmin, xmax, ncols)
-        topo.y = np.linspace(ymin, ymax, nrows)
-        topo.Z = np.flipud(Z)       # clawpack convention: row 0 = south
+        # y north-to-south matches file row order; set_xyZ detects dy<0 and flips both
+        topo = topotools.Topography()
+        topo.set_xyZ(np.linspace(xmin, xmax, ncols),
+                     np.linspace(ymax, ymin, nrows),
+                     Z)
         return topo
 
     # ------------------------------------------------------------------ #
@@ -1108,32 +1242,57 @@ def raster_to_topotools(source, nan_replace=False):
                     break           # end of header, data starts
                 k, v = line.split(':', 1)
                 kv[k.strip().lower()] = v.strip()
-        nrows     = int(kv['rows'])
-        ncols     = int(kv['cols'])
-        xmin      = float(kv['west'])
-        xmax      = float(kv['east'])
-        ymin      = float(kv['south'])
-        ymax      = float(kv['north'])
+        nrows        = int(kv['rows'])
+        ncols        = int(kv['cols'])
+        dx           = (float(kv['east']) - float(kv['west'])) / ncols
+        dy           = (float(kv['north']) - float(kv['south'])) / nrows
+        xmin         = float(kv['west']) + dx / 2
+        xmax         = float(kv['east']) - dx / 2
+        ymin         = float(kv['south']) + dy / 2
+        ymax         = float(kv['north']) - dy / 2
         header_lines = len(kv)
 
         Z = np.genfromtxt(source, skip_header=header_lines, missing_values='*')
         if nan_replace:
             Z = np.nan_to_num(Z, nan=-9999)
+        else:
+            Z = np.ma.masked_invalid(Z)
 
-        topo   = topotools.Topography()
-        topo.x = np.linspace(xmin, xmax, ncols)
-        topo.y = np.linspace(ymin, ymax, nrows)
-        topo.Z = Z[::-1, :]         # GRASS: row 0 = north → flip to south
+        # y north-to-south matches file row order; set_xyZ detects dy<0 and flips both
+        topo = topotools.Topography()
+        topo.set_xyZ(np.linspace(xmin, xmax, ncols),
+                     np.linspace(ymax, ymin, nrows),
+                     Z)
         return topo
 
     else:
-        # ESRI corner, ESRI center, or Clawpack — topotools handles all three
+        # ESRI corner, ESRI center, or Clawpack
+        # Use topotools for header parsing (handles xllcorner→cell-center shift),
+        # but load Z manually to avoid topotools' hardcoded skiprows=6, which
+        # silently drops the first data row when nodata_value is absent (5-line headers).
+        import re as _re
+        header_lines = 0
+        with open(source) as _f:
+            for line in _f:
+                if _re.search(r'[a-zA-Z]', line):
+                    header_lines += 1
+                else:
+                    break
+
         topo = topotools.Topography(path=source, topo_type=3)
-        topo.read(mask=True)
+        topo.read_header()
+
+        Z = np.genfromtxt(source, skip_header=header_lines)
+        nodata = getattr(topo, 'no_data_value', None)
+        if nodata is not None:
+            Z[Z == nodata] = np.nan
         if nan_replace:
-            topo.Z = np.ma.filled(topo.Z, -9999)
+            Z = np.nan_to_num(Z, nan=-9999)
         else:
-            topo.Z = np.ma.filled(topo.Z, np.nan)
+            Z = np.ma.masked_invalid(Z)
+
+        # topo._y is south-to-north after read_header; reverse for set_xyZ (dy<0 → auto-flip)
+        topo.set_xyZ(topo._x, topo._y[::-1], Z)
         return topo
 
 
