@@ -718,45 +718,45 @@ def raster_check(filepath):
 
 # determine_file_type
 # to be deleted (replaced by raster_parse_header) once adapted everywhere
-def raster_determine_type(file):
-    """ 
-    Goal: determining the nature of a raster file
-    Input: raster *.brage.asc
-    Output: the file type (grass, esri or claw format)
-    """
+# def raster_determine_type(file):
+#     """ 
+#     Goal: determining the nature of a raster file
+#     Input: raster *.brage.asc
+#     Output: the file type (grass, esri or claw format)
+#     """
     
-    try:
-        with open(file, "r") as f:
-            text = f.readline().strip()
+#     try:
+#         with open(file, "r") as f:
+#             text = f.readline().strip()
 
-        # Regular expression to find the first number
-        # number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
-        # Search for the first number
-        # number_match = re.search(number_pattern, text)
-        # Search for the first word
-        # Regular expression to find the first word
-        word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only)
-        word_match = re.search(word_pattern, text)
-        type_file = 'esri'
+#         # Regular expression to find the first number
+#         # number_pattern = r'-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b'  # Matches integers, floats, and scientific notation
+#         # Search for the first number
+#         # number_match = re.search(number_pattern, text)
+#         # Search for the first word
+#         # Regular expression to find the first word
+#         word_pattern = r'\b[a-zA-Z_]+\b'  # Matches any word (letters only)
+#         word_match = re.search(word_pattern, text)
+#         type_file = 'esri'
 
-        if word_match:
-            start_position = word_match.start() 
-            word = word_match.group()
-            if start_position == 0:
-                type_file = 'esri'
-            else:
-                type_file = 'claw'
+#         if word_match:
+#             start_position = word_match.start() 
+#             word = word_match.group()
+#             if start_position == 0:
+#                 type_file = 'esri'
+#             else:
+#                 type_file = 'claw'
 
-            if word in ['north', 'south', 'east', 'west']:
-                type_file = 'grass'
+#             if word in ['north', 'south', 'east', 'west']:
+#                 type_file = 'grass'
 
-        if type_file in ['claw', 'esri', 'grass']:
-            return type_file
-        else:
-            print(f'Error!I cannot determine the type of the file {file}.')
+#         if type_file in ['claw', 'esri', 'grass']:
+#             return type_file
+#         else:
+#             print(f'Error!I cannot determine the type of the file {file}.')
 
-    except FileNotFoundError:
-        print(f"The file '{file}' does not exist.")
+#     except FileNotFoundError:
+#         print(f"The file '{file}' does not exist.")
 
 # count_header_lines
 def raster_header_count_lines(filepath, num_lines = 10):
@@ -820,11 +820,11 @@ def raster_parse_header(source):
     header_size         = raster_header_count_lines(source, num_lines=10)
     header              = [getline(source, i) for i in range(1, header_size + 1)]
 
-    header_extraction   = np.array([extract_values(string) for string in header])
-    failure             = header_extraction[:, 0]
-    values              = header_extraction[:, 1]
-    keys                = header_extraction[:, 2]
-    remarks             = header_extraction[:, 3]
+    header_extraction   = [extract_values(string) for string in header]
+    failure             = [row[0] for row in header_extraction]
+    values              = [row[1] for row in header_extraction]
+    keys                = [row[2] for row in header_extraction]
+    remarks             = [row[3] for row in header_extraction]
     dictionnaire        = {keys[k]: values[k] for k in range(header_size)}
 
     if 'north' in keys:
@@ -842,8 +842,8 @@ def raster_parse_header(source):
         print(f'Error!I cannot determine the type of the file {source}.')
 
     if type_file == 'grass':
-        nbx       = int(dictionnaire['cols'])
-        nby       = int(dictionnaire['rows'])
+        nbx       = int(dictionnaire['ncols'])
+        nby       = int(dictionnaire['nrows'])
         ymin      = dictionnaire['south']
         ymax      = dictionnaire['north']
         xmin      = dictionnaire['west']
@@ -879,128 +879,128 @@ def raster_parse_header(source):
     return xmin, xmax, ymin, ymax, nbx, nby, cell_size, header_size, type_file, grid_type, failure, remarks
 
 # plot_topo
-def raster_plot_topo_old(
-        topo_file, 
-        ax = None, 
-        figsize_width = 10, 
-        contour_interval = 20,
-        azdeg = 315, 
-        altdeg = 45, 
-        grid = 200, 
-        ylabel_position = "left", 
-        resampling = None
-        ):
-    """
-    Draws the topographic background (hillshade + contour lines) on a matplotlib axis.
+# def raster_plot_topo_old(
+#         topo_file, 
+#         ax = None, 
+#         figsize_width = 10, 
+#         contour_interval = 20,
+#         azdeg = 315, 
+#         altdeg = 45, 
+#         grid = 200, 
+#         ylabel_position = "left", 
+#         resampling = None
+#         ):
+#     """
+#     Draws the topographic background (hillshade + contour lines) on a matplotlib axis.
 
-    If ax is None, create a new figure with dimensions suitable for the raster. The axis ticks should align with multiples of 100 m (absolute coordinates).
+#     If ax is None, create a new figure with dimensions suitable for the raster. The axis ticks should align with multiples of 100 m (absolute coordinates).
 
-    Input:
-        * topo_file        : object returned by raster_read_file (Digital Elevation Model, DEM)
-        * ax               : existing matplotlib axis (optional; if None, a figure is created)
-        * figsize_width    : width of the figure in inches if ax=None (default is 10)
-        * contour_interval : contour line spacing in meters (default is 25)
-        * azdeg, altdeg    : azimuth and elevation of the light source for the hillshade
-        * step             : step between labels, default is 200 m
-        * ylabel_position  : position of the y-labels
-        * resampling       : integer or None. If an integer is given, the DEM is resampled with a step = resampling
+#     Input:
+#         * topo_file        : object returned by raster_read_file (Digital Elevation Model, DEM)
+#         * ax               : existing matplotlib axis (optional; if None, a figure is created)
+#         * figsize_width    : width of the figure in inches if ax=None (default is 10)
+#         * contour_interval : contour line spacing in meters (default is 25)
+#         * azdeg, altdeg    : azimuth and elevation of the light source for the hillshade
+#         * step             : step between labels, default is 200 m
+#         * ylabel_position  : position of the y-labels
+#         * resampling       : integer or None. If an integer is given, the DEM is resampled with a step = resampling
 
-    Output:
-        * fig, ax, x0, y0  (where x0, y0: southwest corner of the raster in absolute coordinates)
-    """
-    if topo_file is None:
-        raise ValueError("raster_plot_topo: topo_file is None — check that the DEM was loaded successfully.")
+#     Output:
+#         * fig, ax, x0, y0  (where x0, y0: southwest corner of the raster in absolute coordinates)
+#     """
+#     if topo_file is None:
+#         raise ValueError("raster_plot_topo: topo_file is None — check that the DEM was loaded successfully.")
 
-    import  matplotlib.colors as mcolors
-    import  matplotlib.pyplot as plt
-    from    matplotlib.ticker import FuncFormatter
-    import  math
+#     import  matplotlib.colors as mcolors
+#     import  matplotlib.pyplot as plt
+#     from    matplotlib.ticker import FuncFormatter
+#     import  math
 
-    # Cell size and SW corner (cell edge)
-    cell_dx = float(topo_file.delta[0])
-    cell_dy = float(topo_file.delta[1])
-    x0 = float(topo_file.x[0])  - cell_dx / 2   # west  edge
-    y0 = float(topo_file.y[0])  - cell_dy / 2   # south edge
-    x1 = float(topo_file.x[-1]) + cell_dx / 2   # east  edge
-    y1 = float(topo_file.y[-1]) + cell_dy / 2   # north edge
-    width  = x1 - x0
-    height = y1 - y0
+#     # Cell size and SW corner (cell edge)
+#     cell_dx = float(topo_file.delta[0])
+#     cell_dy = float(topo_file.delta[1])
+#     x0 = float(topo_file.x[0])  - cell_dx / 2   # west  edge
+#     y0 = float(topo_file.y[0])  - cell_dy / 2   # south edge
+#     x1 = float(topo_file.x[-1]) + cell_dx / 2   # east  edge
+#     y1 = float(topo_file.y[-1]) + cell_dy / 2   # north edge
+#     width  = x1 - x0
+#     height = y1 - y0
 
-    # Create figure if not passed as argument
-    if ax is None:
-        w = figsize_width
-        h = round(w * height / width, 2)
-        fig, ax = plt.subplots(figsize=(w, h), layout = 'constrained')
-        try:
-            if hasattr(fig.canvas, 'header_visible'):
-                setattr(fig.canvas, 'header_visible', False)  # ipympl uniquement
-        except AttributeError:
-            pass
-    else:
-        fig = ax.figure
+#     # Create figure if not passed as argument
+#     if ax is None:
+#         w = figsize_width
+#         h = round(w * height / width, 2)
+#         fig, ax = plt.subplots(figsize=(w, h), layout = 'constrained')
+#         try:
+#             if hasattr(fig.canvas, 'header_visible'):
+#                 setattr(fig.canvas, 'header_visible', False)  # ipympl uniquement
+#         except AttributeError:
+#             pass
+#     else:
+#         fig = ax.figure
 
-    # Relative coordinates
-    Z = topo_file.Z
-    nrows, ncols = Z.shape
-    if ncols != len(topo_file.x) or nrows != len(topo_file.y):
-        warnings.warn(
-            f"Z.shape ({nrows}, {ncols}) does not match "
-            f"len(x)={len(topo_file.x)}, len(y)={len(topo_file.y)}. "
-            "Recomputing coordinate arrays from Z.shape — check your topo object.",
-            stacklevel = 2
-        )
-        # Z a été rééchantillonné sans mettre à jour x/y : on recalcule la grille depuis Z.shape
-        x_rel = np.linspace(0, float(topo_file.x[-1] - topo_file.x[0]), ncols)
-        y_rel = np.linspace(0, float(topo_file.y[-1] - topo_file.y[0]), nrows)
-    else:
-        x_rel = topo_file.x - x0
-        y_rel = topo_file.y - y0
-    XX, YY = np.meshgrid(x_rel, y_rel)
+#     # Relative coordinates
+#     Z = topo_file.Z
+#     nrows, ncols = Z.shape
+#     if ncols != len(topo_file.x) or nrows != len(topo_file.y):
+#         warnings.warn(
+#             f"Z.shape ({nrows}, {ncols}) does not match "
+#             f"len(x)={len(topo_file.x)}, len(y)={len(topo_file.y)}. "
+#             "Recomputing coordinate arrays from Z.shape — check your topo object.",
+#             stacklevel = 2
+#         )
+#         # Z a été rééchantillonné sans mettre à jour x/y : on recalcule la grille depuis Z.shape
+#         x_rel = np.linspace(0, float(topo_file.x[-1] - topo_file.x[0]), ncols)
+#         y_rel = np.linspace(0, float(topo_file.y[-1] - topo_file.y[0]), nrows)
+#     else:
+#         x_rel = topo_file.x - x0
+#         y_rel = topo_file.y - y0
+#     XX, YY = np.meshgrid(x_rel, y_rel)
 
-    # Hillshade
-    ls = mcolors.LightSource(azdeg = azdeg, altdeg = altdeg)
-    cell_size = float(x_rel[1] - x_rel[0])
-    # hillshade expects row 0 = north (image convention); Z has row 0 = south → flip, shade, flip back
-    hs = np.flipud(ls.hillshade(np.flipud(Z), vert_exag = 2, dx = cell_size, dy = cell_size))
-    if resampling is None:
-        ax.pcolormesh(XX, YY, hs, cmap = "gray", shading = "auto", alpha = 0.8)
-    else:
-        ax.pcolormesh(XX[::resampling,::resampling], YY[::resampling,::resampling], hs[::resampling,::resampling], cmap = "gray", shading = "auto", alpha = 0.8)
+#     # Hillshade
+#     ls = mcolors.LightSource(azdeg = azdeg, altdeg = altdeg)
+#     cell_size = float(x_rel[1] - x_rel[0])
+#     # hillshade expects row 0 = north (image convention); Z has row 0 = south → flip, shade, flip back
+#     hs = np.flipud(ls.hillshade(np.flipud(Z), vert_exag = 2, dx = cell_size, dy = cell_size))
+#     if resampling is None:
+#         ax.pcolormesh(XX, YY, hs, cmap = "gray", shading = "auto", alpha = 0.8)
+#     else:
+#         ax.pcolormesh(XX[::resampling,::resampling], YY[::resampling,::resampling], hs[::resampling,::resampling], cmap = "gray", shading = "auto", alpha = 0.8)
 
-    # Contours
-    zmin_c = int(np.nanmin(Z) // contour_interval) * contour_interval
-    zmax_c = int(np.nanmax(Z) // contour_interval + 1) * contour_interval
-    levels_minor = np.arange(zmin_c, zmax_c, contour_interval)
-    levels_major = np.arange(zmin_c, zmax_c, contour_interval * 5)
-    ax.contour(XX, YY, Z, levels = levels_minor, colors = "k", linewidths = 0.4, alpha = 0.5)
-    cs = ax.contour(XX, YY, Z, levels = levels_major, colors = "k", linewidths = 0.9, alpha = 0.8)
-    ax.clabel(cs, fmt="%d m", fontsize = 7, inline = True)
+#     # Contours
+#     zmin_c = int(np.nanmin(Z) // contour_interval) * contour_interval
+#     zmax_c = int(np.nanmax(Z) // contour_interval + 1) * contour_interval
+#     levels_minor = np.arange(zmin_c, zmax_c, contour_interval)
+#     levels_major = np.arange(zmin_c, zmax_c, contour_interval * 5)
+#     ax.contour(XX, YY, Z, levels = levels_minor, colors = "k", linewidths = 0.4, alpha = 0.5)
+#     cs = ax.contour(XX, YY, Z, levels = levels_major, colors = "k", linewidths = 0.9, alpha = 0.8)
+#     ax.clabel(cs, fmt="%d m", fontsize = 7, inline = True)
 
-    ax.set_aspect("equal")
+#     ax.set_aspect("equal")
 
-    # Ticks at absolute-coord multiples of grid, converted to relative coords
-    x_ticks = np.arange(math.ceil(x0 / grid) * grid, x1, grid) - x0
-    y_ticks = np.arange(math.ceil(y0 / grid) * grid, y1, grid) - y0
-    x_ticks = x_ticks[(x_ticks >= 0) & (x_ticks <= width)]
-    y_ticks = y_ticks[(y_ticks >= 0) & (y_ticks <= height)]
-    ax.set_xticks(x_ticks)
-    ax.set_yticks(y_ticks)
+#     # Ticks at absolute-coord multiples of grid, converted to relative coords
+#     x_ticks = np.arange(math.ceil(x0 / grid) * grid, x1, grid) - x0
+#     y_ticks = np.arange(math.ceil(y0 / grid) * grid, y1, grid) - y0
+#     x_ticks = x_ticks[(x_ticks >= 0) & (x_ticks <= width)]
+#     y_ticks = y_ticks[(y_ticks >= 0) & (y_ticks <= height)]
+#     ax.set_xticks(x_ticks)
+#     ax.set_yticks(y_ticks)
 
-    # Axes, labels and gridlines
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v + x0:.0f}"))
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v + y0:.0f}"))
-    if ylabel_position == 'right':
-        ax.yaxis.tick_right()
-        ax.yaxis.set_label_position("right")    
-    else:
-        ax.yaxis.tick_left()
-        ax.yaxis.set_label_position("left") 
-    ax.tick_params(axis = "y", labelrotation = 90)
-    ax.set_xlabel(r"$x$  [m]")
-    ax.set_ylabel(r"$y$  [m]")
-    ax.grid(linewidth = 0.7, alpha = 0.85)
+#     # Axes, labels and gridlines
+#     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v + x0:.0f}"))
+#     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v + y0:.0f}"))
+#     if ylabel_position == 'right':
+#         ax.yaxis.tick_right()
+#         ax.yaxis.set_label_position("right")    
+#     else:
+#         ax.yaxis.tick_left()
+#         ax.yaxis.set_label_position("left") 
+#     ax.tick_params(axis = "y", labelrotation = 90)
+#     ax.set_xlabel(r"$x$  [m]")
+#     ax.set_ylabel(r"$y$  [m]")
+#     ax.grid(linewidth = 0.7, alpha = 0.85)
 
-    return fig, ax, x0, y0
+#     return fig, ax, x0, y0
 
 # plot_topo
 def raster_plot_topo(

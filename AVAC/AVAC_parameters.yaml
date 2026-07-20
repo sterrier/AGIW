@@ -23,9 +23,9 @@ computation:
   topo_dir: /home/steph/AGIW/Topo
   track_mass: true
 date:
-  date: 2026-06-10 10:51:40.512087
+  date: 2026-07-20 09:02:31.603733
 objects:
-  line: profil.shp
+  line: null
 output:
   delta_t: 1
   language: French
@@ -33,10 +33,10 @@ output:
   output_format: binary32
   verbosity: 0
 release:
-  areas: ZA.shp
+  areas: ReleaseAreas_moiry.shp
   correction_elevation: true
   correction_slope: true
-  d0: 2.0
+  d0: 2.25
   gradient_hypso: 0.0003
   nu: 0.2
   period_return: 300
@@ -51,7 +51,7 @@ rheology:
   u_cr: 0
   xi: 1400
 topography:
-  dem: topo2m_c.asc
-  finer_dem: topo1m_simple.asc
-  topo_refinement: false
+  dem: topo_moiry_4m.asc
+  finer_dem: topo_moiry_2m.asc
+  topo_refinement: true
   topo_source: real_world
