@@ -23,14 +23,14 @@ computation:
   topo_dir: /home/steph/AGIW/Topo
   track_mass: true
 dem_extent:
-  cell_size: 2.0
-  nbx: 1500
-  nby: 1000
+  cell_size: 4.0
+  nbx: 1750
+  nby: 1500
   nodata_value: -9999
-  xmax: 967998.20001221
-  xmin: 965000.20001221
-  ymax: 6536998.08996582
-  ymin: 6535000.08996582
+  xmax: 2613000.0
+  xmin: 2606000.0
+  ymax: 1111000.0
+  ymin: 1105000.0
 file_names:
   initiation_file: init.xyz
   topo_source: real_world
@@ -38,11 +38,8 @@ file_names:
   type_dem: 3
   type_init: 1
 gauges:
-  gauge_recording: true
-  gauges:
-  - - 1
-    - 965560.025847458
-    - 6536375.762824026
+  gauge_recording: false
+  gauges: []
 output:
   delta_t: 1
   language: French
@@ -50,15 +47,23 @@ output:
   output_format: binary32
   verbosity: 0
 refinement:
-  delta_t: null
-  fine_dict: None
-  finer_dem: None
-  topo_refinement: false
+  delta_t: 1
+  fine_dict:
+    cell_size: 2.0
+    nbx: 248
+    nby: 251
+    nodata_value: -9999
+    xmax: 2611006.0
+    xmin: 2610510.0
+    ymax: 1109496.0
+    ymin: 1108994.0
+  finer_dem: topography_fine.asc
+  topo_refinement: true
 release:
-  areas: ZA.shp
+  areas: ReleaseAreas_moiry.shp
   correction_elevation: true
   correction_slope: true
-  d0: 2.0
+  d0: 2.25
   gradient_hypso: 0.0003
   nu: 0.2
   period_return: 300

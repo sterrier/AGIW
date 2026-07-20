@@ -2033,11 +2033,11 @@ class WindowSelector:
                   "Adjust using the handles.  ")
 
         self.window = None
-        self._fig, ax, self._x0, self._y0 = raster_plot_topo(topo_file, figsize_width = figsize_width, contour_interval = contour_interval, azdeg = azdeg, altdeg = altdeg, grid = grid)
+        self._fig, ax = raster_plot_topo(topo_file, figsize_width = figsize_width, contour_interval = contour_interval, azdeg = azdeg, altdeg = altdeg, grid = grid)
 
         # Plot profile
         if len(line) >= 2:
-            ax.plot([line[0][0] - self._x0, line[1][0] - self._x0], [line[0][1] - self._y0, line[1][1] - self._y0], color='black')
+            ax.plot([line[0][0], line[1][0]], [line[0][1], line[1][1]], color='black')
 
         self._selector = RectangleSelector(
             ax,
@@ -2054,11 +2054,10 @@ class WindowSelector:
         plt.show()
 
     def _on_select(self, eclick, erelease):
-        # Les coords du sélecteur sont relatives. Reconversion en absolu
-        xmin = self._x0 + min(eclick.xdata, erelease.xdata)
-        xmax = self._x0 + max(eclick.xdata, erelease.xdata)
-        ymin = self._y0 + min(eclick.ydata, erelease.ydata)
-        ymax = self._y0 + max(eclick.ydata, erelease.ydata)
+        xmin = min(eclick.xdata, erelease.xdata)
+        xmax = max(eclick.xdata, erelease.xdata)
+        ymin = min(eclick.ydata, erelease.ydata)
+        ymax = max(eclick.ydata, erelease.ydata)
         self.window = (xmin, ymin, xmax, ymax)
         print(
             f"\rFenêtre : window = ({xmin:.1f}, {ymin:.1f}, {xmax:.1f}, {ymax:.1f})   ",
