@@ -1637,6 +1637,8 @@ def rename_output_directory(config, current_directory, change_output_directory_n
                             output_dir.rename(output_dir_target)
                         else:
                             print("Nothing to be done. I keep the existing directory.")
+                    else:
+                        output_dir.rename(output_dir_target)
                 else:
                     print("Error: the directory '_output' is missing!")
             else:
