@@ -23,13 +23,13 @@ computation:
   topo_dir: /home/steph/AGIW/Topo
   track_mass: true
 date:
-  date: 2026-07-20 09:56:08.687635
+  date: 2026-07-21 14:08:12.415264
 objects:
   line: null
 output:
   delta_t: 1
   language: French
-  output_directory: _output300
+  output_directory: _moiry_300
   output_format: binary32
   verbosity: 0
 release:
@@ -53,5 +53,5 @@ rheology:
 topography:
   dem: topo_moiry_4m.asc
   finer_dem: topo_moiry_2m.asc
-  topo_refinement: true
+  topo_refinement: false
   topo_source: real_world
