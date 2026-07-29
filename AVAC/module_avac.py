@@ -224,6 +224,7 @@ def avac_parameters_import(file_name):
                             'period_return',
                             'theta_cr',
                             'z_ref',
+                            'zones',
                             ]
     keys_rheology      = [
                             'beta',
@@ -322,6 +323,9 @@ def avac_parameters_import(file_name):
     error += dict_test_keys(avac_parameters['release'], keys_release)
     error += is_boolean('release', 'correction_elevation')
     error += is_boolean('release', 'correction_slope')
+    if not isinstance(avac_parameters['release']['zones'], list):
+        print(f"* The variable zones must be a list (empty list = use all release areas). Here, I get zones = {avac_parameters['release']['zones']}")
+        error += 1
     if avac_parameters['release']['gradient_hypso'] < 0 or avac_parameters['release']['gradient_hypso'] > 0.2:
         print(f"* Check variable gradient_hypso = {avac_parameters['release']['gradient_hypso']}.")
         print(f"* This value cannot be negative or larger than 20 cm/100 m.")

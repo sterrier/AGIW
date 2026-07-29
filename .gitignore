@@ -12,5 +12,7 @@
 /AVAC/*.data
 /AVAC/*.mod
 /AVAC/*.o
+/AVAC/.output
 /AVAC/avac.log
 /AVAC/init.xyz
+/AVAC/xgeoclaw
