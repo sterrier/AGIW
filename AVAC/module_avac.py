@@ -1023,15 +1023,23 @@ def raster_plot_topo(
         altdeg = 45,
         grid = 200,
         ylabel_position = "left",
-        resampling = None
+        resampling = None,
+        axis_units = "m"
         ):
     """
     Same as raster_plot_topo but plots in absolute coordinates (no x0/y0 offset).
     Callers can pass absolute coordinates directly to ax.plot() etc.
 
+    Input:
+        * axis_units : "m" or "km". Data, ticks (incl. grid spacing) and anything
+          plotted on the returned ax (e.g. ax.plot(...)) stay in meters either way;
+          "km" only changes the tick label formatting and axis labels.
+
     Output:
         * fig, ax
     """
+    if axis_units not in ("m", "km"):
+        raise ValueError(f"raster_plot_topo: axis_units must be 'm' or 'km', got {axis_units!r}")
     if topo_file is None:
         raise ValueError("raster_plot_topo2: topo_file is None — check that the DEM was loaded successfully.")
 
@@ -1114,8 +1122,10 @@ def raster_plot_topo(
     ax.set_xticks(x_ticks)
     ax.set_yticks(y_ticks)
 
-    # ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}"))
-    # ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}"))
+    if axis_units == "km":
+        km_formatter = FuncFormatter(lambda v, _: f"{v / 1000:.2f}".rstrip('0').rstrip('.'))
+        ax.xaxis.set_major_formatter(km_formatter)
+        ax.yaxis.set_major_formatter(km_formatter)
     if ylabel_position == 'right':
         ax.yaxis.tick_right()
         ax.yaxis.set_label_position("right")
@@ -1124,8 +1134,8 @@ def raster_plot_topo(
         ax.yaxis.set_label_position("left")
     ax.tick_params(axis = "y", labelrotation = 90)
     plt.setp(ax.get_yticklabels(), va="center")
-    ax.set_xlabel(r"$x$  [m]")
-    ax.set_ylabel(r"$y$  [m]")
+    ax.set_xlabel(r"$x$  [km]" if axis_units == "km" else r"$x$  [m]")
+    ax.set_ylabel(r"$y$  [km]" if axis_units == "km" else r"$y$  [m]")
     ax.grid(linewidth = 0.7, alpha = 0.85)
 
     return fig, ax
