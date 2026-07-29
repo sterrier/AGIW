@@ -1561,7 +1561,7 @@ def extract_values(text):
     # Search for the first number
     numbers = re.findall(pattern_number, text)
     num_count = len(numbers)
-    match_number = numbers[0]
+    match_number = numbers[0] if numbers else None
     
     # Regular expression to find the first word
     match_word = re.search(pattern_word, text)
@@ -1585,7 +1585,7 @@ def extract_values(text):
         word = match_word.group()
         return True, float(number), word, remark
     else:
-        return False
+        return False, float('nan'), None, "no number/word match found"
 
 def find_nearest(array, value):
     """
