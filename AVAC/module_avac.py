@@ -176,7 +176,6 @@ def avac_parameters_import(file_name):
                             'dry_limit',
                             'max_iter',
                             'nb_simul',
-                            'output_directory',
                             'refinement',
                             't_max',
                             'topo_dir',
@@ -198,7 +197,6 @@ def avac_parameters_import(file_name):
                             'mass_frac_stop',
                             'max_iter',
                             'nb_simul',
-                            'output_directory',
                             'refinement',
                             't_max',
                             'track_mass',
@@ -1760,7 +1758,7 @@ def make_output(config, verbosity=False):
     t_0      = config['computation'].get('t_0',0)
     tmax     = config['computation']['t_max']
     nb_simul = config['computation']['nb_simul']
-    outdir   = config['computation']['output_directory']
+    outdir   = '_output'
     dt       = (tmax-t_0) / nb_simul
 
     track_mass     = bool( config['computation'].get('track_mass',     True))
