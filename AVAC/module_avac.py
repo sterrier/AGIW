@@ -237,6 +237,7 @@ def avac_parameters_import(file_name):
     keys_topography    = [
                             'dem',
                             'finer_dem',
+                            'grid',
                             'topo_refinement',
                             'topo_source',
                             ]
@@ -384,6 +385,7 @@ def avac_parameters_import(file_name):
     # Checks topography
     print("Checking topography...")
     error += dict_test_keys(avac_parameters['topography'], keys_topography)
+    error += is_integer('topography', 'grid')
     file_path = Path(topo_dir) / avac_parameters['topography']['dem']
     topo_refinement = avac_parameters['topography']['topo_refinement']
     if file_path.exists():
