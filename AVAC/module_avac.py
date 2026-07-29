@@ -160,6 +160,7 @@ def avac_parameters_import(file_name):
                             'date',
                             'objects',
                             'output',
+                            'project',
                             'release',
                             'rheology',
                             'topography',
@@ -252,6 +253,12 @@ def avac_parameters_import(file_name):
     error += dict_test_keys(avac_parameters, keys_avac)  # check whether the config file keys are those expected
 
     print()
+
+    # Checks project
+    print("Cheking project...")
+    if not isinstance(avac_parameters['project'], str) or not avac_parameters['project']:
+        print(f"* The variable project must be a non-empty string. Here, I get project = {avac_parameters['project']}")
+        error += 1
 
     # Checks animation
     print("Cheking animation...")

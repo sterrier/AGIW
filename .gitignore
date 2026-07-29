@@ -2,6 +2,8 @@
 /AVAC/_output
 /AVAC/_moiry*
 /AVAC/*.data
+/AVAC/*.mod
+/AVAC/*.o
 /AVAC/init.xyz
 /AVAC/pyclaw.log
 /Clawpack_example_2d_shallow
