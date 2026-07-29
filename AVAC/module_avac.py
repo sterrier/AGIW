@@ -1617,14 +1617,25 @@ def format_numbers(features):
 def rename_output_directory(config, current_directory, change_output_directory_name = False, overwrite_directory = False):
     """
     Rename output directory from '_output' to the name in the output dictionary (if existing).
+    Also copies avac.log, AVAC_configuration.yaml and AVAC_parameters.yaml (if present)
+    into that directory, so the log and settings of a run travel with its archived
+    output instead of being overwritten by the next run.
     Input:
         * config: the configuration dictionary
         * current_directory: Path object
-        * change_output_directory_name: boolean (False by default) 
+        * change_output_directory_name: boolean (False by default)
         * overwrite_directory: boolean (False by default
     """
     from pathlib import Path
     output = config['output']
+
+    provenance_files = ['avac.log', 'AVAC_configuration.yaml', 'AVAC_parameters.yaml']
+
+    def _copy_provenance_files(target_dir):
+        for file_name in provenance_files:
+            source_file = current_directory / file_name
+            if source_file.exists():
+                shutil.copy2(source_file, target_dir / file_name)
 
     if change_output_directory_name:
         print("Changing the name of the output directory")
@@ -1636,20 +1647,22 @@ def rename_output_directory(config, current_directory, change_output_directory_n
                     if output_dir_target.exists():
                         print(f"Directory {output_dir_target} already existing")
                         if overwrite_directory:
-                            import shutil
                             print("I will erase it")
                             shutil.rmtree(output_dir_target)
                             output_dir.rename(output_dir_target)
+                            _copy_provenance_files(output_dir_target)
                         else:
                             print("Nothing to be done. I keep the existing directory.")
                     else:
                         output_dir.rename(output_dir_target)
+                        _copy_provenance_files(output_dir_target)
                 else:
                     print("Error: the directory '_output' is missing!")
             else:
                 print(f"Check the output dictionary. As output['output_directory'] is '_output, no change is neeed.")
     else:
         print("The output directory name is '_output'")
+        _copy_provenance_files(current_directory / '_output')
 
 
 ###################

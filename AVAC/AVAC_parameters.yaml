@@ -17,13 +17,12 @@ computation:
   mass_threshold_velocity: 0.01
   max_iter: 100000
   nb_simul: 150
-  output_directory: _output
   refinement: 1
   t_max: 150
   topo_dir: /home/steph/AGIW/Topo
   track_mass: true
 date:
-  date: 2026-07-21 14:08:12.415264
+  date: 2026-07-29 10:06:11.114785
 objects:
   line: null
 output:
@@ -32,6 +31,7 @@ output:
   output_directory: _moiry_300
   output_format: binary32
   verbosity: 0
+project: moiry
 release:
   areas: ReleaseAreas_moiry.shp
   correction_elevation: true

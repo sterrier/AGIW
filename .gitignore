@@ -1,12 +1,16 @@
 /AVAC/__pycache__
-/AVAC/_output
-/AVAC/_moiry*
-/AVAC/*.data
-/AVAC/*.mod
-/AVAC/*.o
-/AVAC/init.xyz
 /AVAC/pyclaw.log
 /Clawpack_example_2d_shallow
 /Export
 /Figures
 /Topo
+
+# Simulation folders and files
+/AVAC/_grimsel*                 
+/AVAC/_moiry*
+/AVAC/_output
+/AVAC/*.data
+/AVAC/*.mod
+/AVAC/*.o
+/AVAC/avac.log
+/AVAC/init.xyz

@@ -17,7 +17,6 @@ computation:
   mass_threshold_velocity: 0.01
   max_iter: 100000
   nb_simul: 150
-  output_directory: _output
   refinement: 1
   t_max: 150
   topo_dir: /home/steph/AGIW/Topo
@@ -34,7 +33,7 @@ dem_extent:
 file_names:
   initiation_file: init.xyz
   topo_source: real_world
-  topofile: topo_moiry_4m.asc
+  topofile: topo_AVAC.asc
   type_dem: 3
   type_init: 1
 gauges:
