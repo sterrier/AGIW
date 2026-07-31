@@ -1402,10 +1402,12 @@ def shapefile_import_initial_condition(file):
     return areas, nb_areas 
 
 # import_polylines
-def shapefile_import_polylines(file = 'profil.shp', language = 'English'):
+def shapefile_import_polylines(file = 'profil.shp', language = 'English', profile_no = None):
     """ import a polyline and describes its features.
     Input:
         * file: name of the shapefile
+        * profile_no: if given, select the feature whose 'id' column equals this value
+          instead of just taking the first one
     Output:
         * ligne: geopandas object
         * coords_array: coordinates of the points
@@ -1424,6 +1426,22 @@ def shapefile_import_polylines(file = 'profil.shp', language = 'English'):
              'French': f"Dimensions du vecteur (array) des coordonnées : "}
     text5 = {'English':f"Error... No data found!",
              'French': f"Erreur... Pas de données !"}
+    text6 = {'English':f"Selected profile id = {profile_no}",
+             'French': f"Profil sélectionné, id = {profile_no}"}
+    text7 = {'English':f"Be careful: profile id {profile_no} was not found in {file}; using all features instead.",
+             'French': f"Attention : le profil d'id {profile_no} est introuvable dans {file} ; utilisation de tous les profils."}
+
+    # Select a specific polyline by id, if requested
+    if profile_no is not None:
+        if 'id' in ligne.columns:
+            selected = ligne[ligne['id'] == profile_no]
+            if len(selected) == 0:
+                print(text7[language])
+            else:
+                ligne = selected
+                print(text6[language])
+        else:
+            print(text7[language])
 
     # Extract coordinates from the geometry
     coords_array = None
