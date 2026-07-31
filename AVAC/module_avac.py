@@ -820,6 +820,20 @@ def raster_check(filepath):
 #     except FileNotFoundError:
 #         print(f"The file '{file}' does not exist.")
 
+# export_raster
+def raster_export(fname, tableau, xll, yll, cellsize, ndata = -9999, boolean = False):
+    """
+    export numpy arrays 'tableau' to file fname in an esri ASCII format
+    """
+    header =  "ncols        %s\n" % tableau.shape[0]
+    header += "nrows        %s\n" % tableau.shape[1]
+    header += "xllcorner    %s\n" % xll
+    header += "yllcorner    %s\n" % yll
+    header += "cellsize     %s\n" % cellsize
+    header += "nodata_value %s\n" % ndata
+    fmt    = '%1i' if boolean else "%1.2f"
+    np.savetxt(fname, np.nan_to_num(tableau.T[::-1,:] ,nan=ndata), header=header, fmt=fmt, comments='')
+
 # count_header_lines
 def raster_header_count_lines(filepath, num_lines = 10):
     """
@@ -2094,19 +2108,6 @@ def make_animation(config, verbosity=True):
 # Initial conditions #
 ######################
 
-# export-to-Qgis function 
-def export_raster(fname, tableau, xll, yll, cellsize, ndata = -9999, boolean = False):
-    """
-    export numpy arrays 'tableau' to file fname in an esri ASCII format
-    """
-    header =  "ncols        %s\n" % tableau.shape[0]
-    header += "nrows        %s\n" % tableau.shape[1]
-    header += "xllcorner    %s\n" % xll
-    header += "yllcorner    %s\n" % yll
-    header += "cellsize     %s\n" % cellsize
-    header += "nodata_value %s\n" % ndata
-    fmt    = '%1i' if boolean else "%1.2f"
-    np.savetxt(fname, np.nan_to_num(tableau.T[::-1,:] ,nan=ndata), header=header, fmt=fmt, comments='')
 
 class WindowSelector:
     """
