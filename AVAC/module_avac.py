@@ -223,6 +223,7 @@ def avac_parameters_import(file_name):
                             'nu',
                             'period_return',
                             'theta_cr',
+                            'window',
                             'z_ref',
                             'zones',
                             ]
@@ -327,6 +328,15 @@ def avac_parameters_import(file_name):
     if not isinstance(avac_parameters['release']['zones'], list):
         print(f"* The variable zones must be a list (empty list = use all release areas). Here, I get zones = {avac_parameters['release']['zones']}")
         error += 1
+    window = avac_parameters['release']['window']
+    if not isinstance(window, list) or (len(window) != 0 and len(window) != 4):
+        print(f"* The variable window must be a list, either empty (= use the full DEM extent) or [xmin, xmax, ymin, ymax]. Here, I get window = {window}")
+        error += 1
+    elif len(window) == 4:
+        xmin_w, xmax_w, ymin_w, ymax_w = window
+        if xmin_w >= xmax_w or ymin_w >= ymax_w:
+            print(f"* Check variable window = {window}: it should satisfy xmin < xmax and ymin < ymax.")
+            error += 1
     if avac_parameters['release']['gradient_hypso'] < 0 or avac_parameters['release']['gradient_hypso'] > 0.2:
         print(f"* Check variable gradient_hypso = {avac_parameters['release']['gradient_hypso']}.")
         print(f"* This value cannot be negative or larger than 20 cm/100 m.")
@@ -580,9 +590,9 @@ def claw_export_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topograp
     else:
         print(f'* Export of DEM to file {name_file}.')
     
-    cell_size    = (xmax - xmin) / (nbx - 1)
+    cell_size    = (xmax - xmin) / nbx
     no_data      = -9999
-    cell_size_y  = (ymax - ymin) / (nby - 1)
+    cell_size_y  = (ymax - ymin) / nby
 
     # Checks
     deviation    = abs((cell_size - cell_size_y) / cell_size)
@@ -605,42 +615,83 @@ def claw_export_dem(xmin, xmax, ymin, ymax, nbx, nby, alt, name_file = 'topograp
         # geoclaw type-3 header (value first, then label)
         f.write('%6i                              ncols\n'  % nbx)
         f.write('%6i                              nrows\n'  % nby)
-        f.write('%22.15e              xlower\n'             % xmin)
-        f.write('%22.15e              ylower\n'             % ymin)
+        f.write('%22.15e              xllcorner\n'          % xmin)
+        f.write('%22.15e              yllcorner\n'          % ymin)
         f.write('%22.15e              cellsize\n'           % cell_size)
         f.write('%10i                          nodata_value\n' % no_data)
         # data: one row per line, top row first (numpy.savetxt is C-level, ~50× faster than a Python loop)
         np.savetxt(f, np.flipud(Z), fmt=fmt)
 
 # export_claw_dem_window
-def claw_export_dem_window(topo_file, window, name_file = 'topography_window.asc'):
+def claw_export_dem_window(topo_file, window, name_file = 'topography_window.asc', margin = None):
     """
-    Export a raster corresponding to window
+    Export a raster covering the requested computational domain `window`, padded
+    with a margin of real topo data so that GeoClaw's node-based topo coverage
+    check does not fail right at the domain edges (a topo file must extend past
+    the computational domain, not stop exactly at it). The margin is clamped to
+    whatever source data is actually available; if the window itself reaches or
+    exceeds the source DEM's extent, the domain is pulled inward (by at least
+    half a cell) instead, with a warning, since no data can be fabricated there.
 
     Input
-    * topo_file: topo object
+    * topo_file: topo object (source DEM)
     * window : (xmin_window, ymin_window, xmax_window, ymax_window)
-      The coordinates are snapped to the nearest grid nodes        
+      -- desired computational domain extent
     * name_file: output file name (default : 'topography_window.asc')
+    * margin: padding (m) requested around the window before cropping
+      (default: one source cell_size)
+
+    Output: writes name_file, and returns the domain box actually usable
+      (clamped if needed) together with the exported topo file's own shape:
+      xmin, xmax, ymin, ymax, nbx, nby
     """
     xmin_w, ymin_w, xmax_w, ymax_w = window
+    cell_size = float(topo_file.delta[0])
+    if margin is None:
+        margin = cell_size
 
-    ix = np.where((topo_file.x >= xmin_w) & (topo_file.x <= xmax_w))[0]
-    iy = np.where((topo_file.y >= ymin_w) & (topo_file.y <= ymax_w))[0]
+    # true edge-to-edge extent of the source raster
+    src_xmin = float(topo_file.x[0])  - cell_size / 2
+    src_xmax = float(topo_file.x[-1]) + cell_size / 2
+    src_ymin = float(topo_file.y[0])  - cell_size / 2
+    src_ymax = float(topo_file.y[-1]) + cell_size / 2
+
+    # the domain itself must stay at least half a cell inside the source extent,
+    # otherwise no topo data can ever reach its edge
+    half = cell_size / 2
+    xmin_dom = max(xmin_w, src_xmin + half)
+    xmax_dom = min(xmax_w, src_xmax - half)
+    ymin_dom = max(ymin_w, src_ymin + half)
+    ymax_dom = min(ymax_w, src_ymax - half)
+    if (xmin_dom, xmax_dom, ymin_dom, ymax_dom) != (xmin_w, xmax_w, ymin_w, ymax_w):
+        print(f"* Attention : la fenetre demandee touche ou depasse le bord du MNT source.")
+        print(f"  Domaine ajuste a x=[{xmin_dom:.1f}, {xmax_dom:.1f}], y=[{ymin_dom:.1f}, {ymax_dom:.1f}].")
+
+    # crop with extra margin (clamped to the source) so topo coverage exceeds the domain
+    xmin_c = max(xmin_dom - margin, src_xmin)
+    xmax_c = min(xmax_dom + margin, src_xmax)
+    ymin_c = max(ymin_dom - margin, src_ymin)
+    ymax_c = min(ymax_dom + margin, src_ymax)
+
+    ix = np.where((topo_file.x >= xmin_c) & (topo_file.x <= xmax_c))[0]
+    iy = np.where((topo_file.y >= ymin_c) & (topo_file.y <= ymax_c))[0]
 
     if ix.size == 0 or iy.size == 0:
         raise ValueError("The requested window is outside or does not contain any points from the raster.")
 
     Z_window            = topo_file.Z[np.ix_(iy, ix)]
-    xmin_out, xmax_out  = topo_file.x[ix[0]],  topo_file.x[ix[-1]]
-    ymin_out, ymax_out  = topo_file.y[iy[0]],  topo_file.y[iy[-1]]
+    xmin_out, xmax_out  = topo_file.x[ix[0]] - cell_size / 2,  topo_file.x[ix[-1]] + cell_size / 2
+    ymin_out, ymax_out  = topo_file.y[iy[0]] - cell_size / 2,  topo_file.y[iy[-1]] + cell_size / 2
     nbx_out, nby_out    = len(ix), len(iy)
 
     print(f'Export of windowed DEM to file {name_file}.')
-    print(f'  x : [{xmin_out:.1f}, {xmax_out:.1f}]  ({nbx_out} cols)')
-    print(f'  y : [{ymin_out:.1f}, {ymax_out:.1f}]  ({nby_out} rows)')
+    print(f'  topo coverage x : [{xmin_out:.1f}, {xmax_out:.1f}]  ({nbx_out} cols)')
+    print(f'  topo coverage y : [{ymin_out:.1f}, {ymax_out:.1f}]  ({nby_out} rows)')
+    print(f'  domain          x : [{xmin_dom:.1f}, {xmax_dom:.1f}], y : [{ymin_dom:.1f}, {ymax_dom:.1f}]')
 
     claw_export_dem(xmin_out, xmax_out, ymin_out, ymax_out, nbx_out, nby_out, Z_window, name_file)
+
+    return float(xmin_dom), float(xmax_dom), float(ymin_dom), float(ymax_dom), int(nbx_out), int(nby_out)
 
 # export_claw_initiation_file
 def claw_export_initiation_file(topo_file, zi, filename = 'init.xyz'):   
@@ -1750,11 +1801,12 @@ def make_output(config, verbosity=False):
         filled = pct // 5
         bar = "█" * filled + "░" * (20 - filled)
         if frames_done > 0:
-            eta = elapsed * (nb_simul - frames_done) / frames_done
+            ert = elapsed / frames_done * (nb_simul - frames_done)
+            eta = _time.strftime('%H:%M:%S', _time.localtime(_time.time() + ert))
             if config['output']['language']=='French':
-                time_str = f"  temps écoulé {elapsed:.0f}s  | fin estimé du calcul dans ~{eta:.0f} s"
+                time_str = f"  temps écoulé {elapsed:.0f}s | fin estimée à {eta} (dans {ert:.0f} s)"
             else:
-                time_str = f"  elapsed {elapsed:.0f}s  estimated time to completion ~{eta:.0f} s" 
+                time_str = f"  elapsed {elapsed:.0f}s | estimated completion at {eta} (in {ert:.0f} s)"
         else:
             if config['output']['language']=='French':
                 time_str = f"  temps écoulé {elapsed:.0f} s"
