@@ -438,7 +438,10 @@ def setrun(claw_pkg='geoclaw'):
     fgout.y2 = DEM['ymax'] #- dx_fine/2.
     fgout.tstart = 0.
     fgout.tend   = Param['t_max']
-    fgout.nout   = Movie['n_out']
+    # nout counts the total number of fgout frames (including tstart), whereas
+    # clawdata.num_output_times counts frames after t0. Add 1 so the fgout and
+    # fort frames land on the same times: t = 0, 1, ..., t_max.
+    fgout.nout   = Movie['n_out'] + 1
     fgout_grids.append(fgout)    # written to fgout_grids.data
 
     #########################
