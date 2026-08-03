@@ -1829,11 +1829,11 @@ def make_output(config, verbosity=False):
 
     def _print_bar(frames_done):
         elapsed = _time.time() - t_start
-        pct = int(100 * frames_done / nb_simul)
+        pct = int(100 * frames_done / nb_frames)
         filled = pct // 5
         bar = "█" * filled + "░" * (20 - filled)
         if frames_done > 0:
-            ert = elapsed / frames_done * (nb_simul - frames_done)
+            ert = elapsed / frames_done * (nb_frames - frames_done)
             eta = _time.strftime('%H:%M:%S', _time.localtime(_time.time() + ert))
             if config['output']['language']=='French':
                 time_str = f"  temps écoulé {elapsed:.0f}s | fin estimée à {eta} (dans {ert:.0f} s)"
@@ -1844,7 +1844,7 @@ def make_output(config, verbosity=False):
                 time_str = f"  temps écoulé {elapsed:.0f} s"
             else:
                 time_str = f"  elapsed {elapsed:.0f} s"
-        sys.stdout.write(f"\r  [{bar}] {pct:3d}%  frame {frames_done}/{nb_simul}{time_str}")
+        sys.stdout.write(f"\r  [{bar}] {pct:3d}%  frame {frames_done}/{nb_frames}{time_str}")
         sys.stdout.flush()
 
     def _read_frame_mass(frame_idx):
@@ -1880,12 +1880,15 @@ def make_output(config, verbosity=False):
     nb_simul = config['computation']['nb_simul']
     outdir   = '_output'
     dt       = (tmax-t_0) / nb_simul
+    # nb_simul counts the output intervals; GeoClaw also writes the frame at t_0
+    # (clawdata.output_t0 = True), so nb_simul+1 fort.t???? files are produced.
+    nb_frames = nb_simul + 1
 
     track_mass     = bool( config['computation'].get('track_mass',     True))
     mass_frac_stop = float(config['computation'].get('mass_frac_stop', 0.03))
     force_stop     = bool( config['computation'].get('force_stop',     False))
 
-    print(f"AVAC computation: t = {t_0} → {tmax} s  |  {nb_simul} frames  |  dt = {dt:.1f} s")
+    print(f"AVAC computation: t = {t_0} → {tmax} s  |  {nb_frames} frames  |  dt = {dt:.1f} s")
     if track_mass:
         if config['output']['language']=='French':
             print(f"  Suivi de la masse : oui  |  seuil d'arrêt : {100*mass_frac_stop:.0f} %  |  "
@@ -2024,8 +2027,10 @@ def make_animation(config, verbosity=True):
         verbosity = True
     print(f"I will make an animation for the {config['animation']['variable']} variable.")
     tmax   = config['computation']['t_max']
-    n_frames = config['animation']['n_out']
-    dt     = tmax / n_frames
+    # n_out counts the output intervals; the fgout series also includes the frame
+    # at t = 0, so make_fgout_animation.py renders n_out+1 frames.
+    n_frames = config['animation']['n_out'] + 1
+    dt     = tmax / config['animation']['n_out']
     print(f"Times: from t = 0 to t = {tmax} s with a time step dt = {dt} s.")
 
     frames_done = 0
