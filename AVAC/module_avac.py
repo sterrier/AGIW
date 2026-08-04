@@ -665,7 +665,7 @@ def claw_export_dem_window(topo_file, window, name_file = 'topography_window.asc
     ymax_dom = min(ymax_w, src_ymax - half)
     if (xmin_dom, xmax_dom, ymin_dom, ymax_dom) != (xmin_w, xmax_w, ymin_w, ymax_w):
         print(f"* Attention : la fenetre demandee touche ou depasse le bord du MNT source.")
-        print(f"  Domaine ajuste a x=[{xmin_dom:.1f}, {xmax_dom:.1f}], y=[{ymin_dom:.1f}, {ymax_dom:.1f}].")
+        print(f"  Domaine ajusté a x=[{xmin_dom:.1f}, {xmax_dom:.1f}], y=[{ymin_dom:.1f}, {ymax_dom:.1f}].")
 
     # crop with extra margin (clamped to the source) so topo coverage exceeds the domain
     xmin_c = max(xmin_dom - margin, src_xmin)
