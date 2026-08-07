@@ -1529,11 +1529,58 @@ def correctingFactorSlope(s, theta, nu):
     formula_result = (np.sin(theta_rad) - nu * np.cos(theta_rad)) / (np.sin(q) - nu * np.cos(q))
     return np.where(q > np.deg2rad(25), formula_result, 0)
 
+def polyline_sample_points(profile_coords, num_points = 1000, spacing = None):
+    """
+    Evenly spaced points along a (possibly multi-segment) polyline.
+
+    Input:
+        * profile_coords: array of (x,y) coordinates of the polyline vertices
+        * num_points: number of points to sample along the polyline
+        * spacing: if given, overrides num_points so that consecutive samples are
+          spacing metres apart (num_points = ceil(total_length/spacing) + 1)
+    Output:
+        * sampling_distances: curvilinear abscissa from the origin point
+        * sampled_points: (x,y) coordinates of the sampled points
+    """
+
+    # Calculate cumulative distance along the profile
+    profile_coords = np.array(profile_coords)[:, :2]  # drop any z coordinate
+    segments = np.diff(profile_coords, axis = 0)
+    segment_lengths = np.sqrt(np.sum(segments**2, axis = 1))
+    cumulative_distances = np.insert(np.cumsum(segment_lengths), 0, 0)
+    total_length = cumulative_distances[-1]
+
+    if spacing is not None:
+        num_points = int(np.ceil(total_length / spacing)) + 1
+
+    # Create sampling distances along the entire profile
+    sampling_distances = np.linspace(0, total_length, num_points)
+
+    # Interpolate points along the entire profile
+    sampled_points = []
+    for dist in sampling_distances:
+        # Find which segment this distance falls into
+        segment_idx = np.searchsorted(cumulative_distances, dist, side='right') - 1
+        segment_idx = min(segment_idx, len(segments) - 1)
+
+        # Calculate position within the segment
+        segment_start_dist = cumulative_distances[segment_idx]
+        segment_progress = dist - segment_start_dist
+        segment_frac = segment_progress / segment_lengths[segment_idx]
+
+        # Interpolate coordinates
+        start_point = profile_coords[segment_idx]
+        end_point = profile_coords[segment_idx + 1]
+        point = start_point + segment_frac * (end_point - start_point)
+        sampled_points.append(point)
+
+    return sampling_distances, np.array(sampled_points)
+
 def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points = 1000):
     """
     Create a cross-section along a polyline. Originally made for plotting DEM cross-sections, but it works
     for other two-dimensional data.
-    
+
     Input:
         * dem: masked array of DEM
         * x_coords: x coordinates of DEM grid
@@ -1547,47 +1594,18 @@ def create_cross_section(dem, x_coords, y_coords, profile_coords, num_points = 1
     """
 
     from scipy.interpolate import RegularGridInterpolator
-    from scipy.spatial.distance import cdist
 
     # Create interpolator for DEM
     # Use np.ma.filled so that masked cells become NaN rather than being
     # interpolated from the raw fill value (-2e99 for fgmax never-wet cells).
     dem_data = np.ma.filled(dem, np.nan) if np.ma.is_masked(dem) else np.asarray(dem)
     interp = RegularGridInterpolator((y_coords, x_coords), dem_data, bounds_error = False, fill_value = np.nan)
-    
-    # Calculate cumulative distance along the profile
-    profile_coords = np.array(profile_coords)
-    segments = np.diff(profile_coords, axis = 0)
-    segment_lengths = np.sqrt(np.sum(segments**2, axis = 1))
-    cumulative_distances = np.insert(np.cumsum(segment_lengths), 0, 0)
-    total_length = cumulative_distances[-1]
-    
-    # Create sampling distances along the entire profile
-    sampling_distances = np.linspace(0, total_length, num_points)
-    
-    # Interpolate points along the entire profile
-    sampled_points = []
-    for dist in sampling_distances:
-        # Find which segment this distance falls into
-        segment_idx = np.searchsorted(cumulative_distances, dist, side='right') - 1
-        segment_idx = min(segment_idx, len(segments) - 1)
-        
-        # Calculate position within the segment
-        segment_start_dist = cumulative_distances[segment_idx]
-        segment_progress = dist - segment_start_dist
-        segment_frac = segment_progress / segment_lengths[segment_idx]
-        
-        # Interpolate coordinates
-        start_point = profile_coords[segment_idx]
-        end_point = profile_coords[segment_idx + 1]
-        point = start_point + segment_frac * (end_point - start_point)
-        sampled_points.append(point)
-    
-    sampled_points = np.array(sampled_points)
-    
+
+    sampling_distances, sampled_points = polyline_sample_points(profile_coords, num_points = num_points)
+
     # Extract elevations at sampled points
     elevations = interp(sampled_points[:, [1, 0]])  # Note: y,x order for RegularGridInterpolator
-    
+
     return sampling_distances, elevations, sampled_points
 
 # flatten_dict
@@ -1641,8 +1659,271 @@ def export_profile(file, distances, elevations, header = False):
         for dist, elev in zip(distances, elevations):
             f.write(f'{dist}\t{elev}\n')
 
+################
+# Photofinish  #
+################
+# A photofinish is a space-time density plot across a transversal profile:
+# time on the x axis, curvilinear abscissa s along the profile on the y axis,
+# and the flow variable shown as discrete colour classes. The colour classes and
+# the reversed y axis are ported from the Mathematica reference notebook
+# PostProcessingAVAC2_ENG_v5.m (subsection "Cross-sections / DensityPlots",
+# colour functions colorHimpuls, colorVimpuls and colorQDMdiscrete).
+
+# Mathematica colour classes. The first class is the "no flow" one and is drawn
+# fully transparent, as in the reference (alpha = 0 on the first colour).
+# Note on the velocity classes: the reference lumps everything below 25 m/s into
+# a single colour, which is coarse for a snow avalanche (peak around 30 m/s).
+# The bins are kept as in the reference, but they are here so they can be retuned.
+photofinish_bounds = {
+    'depth'   : [0, 0.2, 0.5, 1, 2, 5, 10, 20],
+    'velocity': [0, 1, 25, 30, 35, 40, 45, 50, 55, 60, 99.9],
+    'momentum': [0, 1, 25, 50, 75, 100, 125, 150, 175, 200, 500],
+    }
+
+photofinish_colors = {
+    'depth': [
+        (1.0000, 1.0000, 1.0000),  # 0.0 - 0.2 m (transparent)
+        (0.6392, 1.0000, 0.4510),  # 0.2 - 0.5
+        (0.2196, 0.6588, 0.0000),  # 0.5 - 1
+        (0.0000, 1.0000, 0.7725),  # 1   - 2
+        (0.0000, 0.4392, 1.0000),  # 2   - 5
+        (0.7725, 0.0000, 1.0000),  # 5   - 10
+        (1.0000, 0.0000, 0.7725),  # 10  - 20
+        ],
+    'velocity': [
+        (1.0000, 1.0000, 1.0000),  # 0  - 1 m/s (transparent)
+        (0.2706, 0.4588, 0.7098),  # 1  - 25
+        (0.4510, 0.5765, 0.7294),  # 25 - 30
+        (0.6353, 0.7059, 0.7412),  # 30 - 35
+        (0.8157, 0.8510, 0.7490),  # 35 - 40
+        (1.0000, 1.0000, 0.7490),  # 40 - 45
+        (0.9882, 0.7961, 0.5725),  # 45 - 50
+        (0.9608, 0.5961, 0.4118),  # 50 - 55
+        (0.9098, 0.4000, 0.2745),  # 55 - 60
+        (0.8392, 0.1843, 0.1529),  # 60 - 99.9
+        ],
+    'momentum': [
+        (1.0000, 1.0000, 1.0000),  # 0   - 1 (1000 kg/m/s) (transparent)
+        (0.2745, 0.3843, 0.8471),  # 1   - 25
+        (0.2078, 0.6706, 0.9725),  # 25  - 50
+        (0.1059, 0.8980, 0.7098),  # 50  - 75
+        (0.4549, 0.9961, 0.3647),  # 75  - 100
+        (0.7882, 0.9373, 0.2039),  # 100 - 125
+        (0.9843, 0.7255, 0.2196),  # 125 - 150
+        (0.9608, 0.4118, 0.0941),  # 150 - 175
+        (0.7882, 0.1608, 0.0118),  # 175 - 200
+        (0.4784, 0.0157, 0.0118),  # 200 - 500
+        ],
+    }
+
+photofinish_labels = {
+    'depth'   : {'French': r"hauteur $h$ (m)",
+                 'English': r"Snow depth $h$ (m)"},
+    'velocity': {'French': r"vitesse $\bar u$ (m/s)",
+                 'English': r"Velocity $\bar u$ (m/s)"},
+    'momentum': {'French': r"quantité de mouvement $\rho h \bar u$ (1000 kg/m/s)",
+                 'English': r"Momentum $\rho h \bar u$ (1000 kg/m/s)"},
+    }
+
+def photofinish_colormaps(opacity = 0.7):
+    """
+    Discrete colormaps and norms for the photofinish plots, ported from
+    PostProcessingAVAC2_ENG_v5.m.
+
+    Input:
+        * opacity: alpha applied to the colour classes (opacityH = 0.7 in the reference)
+    Output:
+        * dictionary keyed by 'depth', 'velocity' and 'momentum', each holding
+          a dict with 'cmap', 'norm' and 'bounds'
+    """
+    import matplotlib.colors as mcolors
+
+    colormaps_photofinish = {}
+    for variable, rgb_list in photofinish_colors.items():
+        bounds = np.array(photofinish_bounds[variable], dtype = float)
+        # First class is the "no flow" one: white and fully transparent
+        rgba_list = [rgb + (0.0 if index == 0 else opacity,)
+                     for index, rgb in enumerate(rgb_list)]
+        cmap = mcolors.ListedColormap(rgba_list)
+        cmap.set_over((1, 0, 1, opacity))   # magenta above the last class, as in the maps
+        cmap.set_under((1, 1, 1, 0.0))
+        cmap.set_bad((1, 1, 1, 0.0))        # outside the domain: transparent
+        colormaps_photofinish[variable] = {
+            'cmap'  : cmap,
+            'norm'  : mcolors.BoundaryNorm(bounds, cmap.N),
+            'bounds': bounds,
+            }
+    return colormaps_photofinish
+
+def photofinish_sample(fgout_grid, nb_frames, sample_points, rho = 300., progress = True):
+    """
+    Sample the fgout frames along one or several profiles.
+
+    The frames are read once and every profile is sampled in the same pass, which
+    matters because reading the frames dominates the cost.
+
+    Input:
+        * fgout_grid: FGoutGrid object (see fgout_tools)
+        * nb_frames: number of frames to read (frames are numbered from 1)
+        * sample_points: array of (x,y) points, or a list/dict of such arrays
+        * rho: snow density (kg/m3), used for the momentum
+        * progress: show a progress bar
+    Output:
+        * times: array of shape (nb_frames,)
+        * results: same container type as sample_points, each entry a dict with
+          'depth', 'velocity' and 'momentum' arrays of shape (nb_frames, nb_points).
+          Momentum is rho*h*u/1000, in 1000 kg/m/s, as in the NetCDF export.
+          Points falling outside the fgout grid are NaN.
+    """
+    from scipy.interpolate import RegularGridInterpolator
+
+    # Accept a single array, a list of arrays or a dict of arrays
+    if isinstance(sample_points, dict):
+        keys   = list(sample_points.keys())
+        arrays = [np.asarray(sample_points[key]) for key in keys]
+        container = 'dict'
+    elif isinstance(sample_points, (list, tuple)):
+        keys   = list(range(len(sample_points)))
+        arrays = [np.asarray(points) for points in sample_points]
+        container = 'list'
+    else:
+        keys   = [0]
+        arrays = [np.asarray(sample_points)]
+        container = 'single'
+
+    # A single stack of query points, so each frame is interpolated in one call
+    sizes   = [len(points) for points in arrays]
+    offsets = np.insert(np.cumsum(sizes), 0, 0)
+    query   = np.vstack(arrays)[:, [1, 0]]  # y,x order for RegularGridInterpolator
+
+    times          = np.zeros(nb_frames)
+    depth_stack    = np.zeros((nb_frames, offsets[-1]))
+    velocity_stack = np.zeros((nb_frames, offsets[-1]))
+
+    iterator = range(nb_frames)
+    if progress:
+        try:
+            from tqdm.notebook import tqdm as tqdm_nb
+            iterator = tqdm_nb(iterator, desc = 'Photofinish', unit = 'frame')
+        except ImportError:
+            pass
+
+    for frame_index in iterator:
+        fgout = fgout_grid.read_frame(frame_index + 1)
+        # fgout.X and fgout.Y have shape (mx, my): transpose the fields to (my, mx)
+        x_coords = fgout.X[:, 0]
+        y_coords = fgout.Y[0, :]
+        interpolator_depth = RegularGridInterpolator(
+            (y_coords, x_coords), np.ma.filled(fgout.h.T, np.nan),
+            method = 'linear', bounds_error = False, fill_value = np.nan)
+        interpolator_speed = RegularGridInterpolator(
+            (y_coords, x_coords), np.ma.filled(fgout.s.T, np.nan),
+            method = 'linear', bounds_error = False, fill_value = np.nan)
+
+        times[frame_index]            = fgout.t
+        depth_stack[frame_index, :]   = interpolator_depth(query)
+        velocity_stack[frame_index, :] = interpolator_speed(query)
+
+    results = {}
+    for index, key in enumerate(keys):
+        start, stop = offsets[index], offsets[index + 1]
+        depth    = depth_stack[:, start:stop]
+        velocity = velocity_stack[:, start:stop]
+        results[key] = {
+            'depth'   : depth,
+            'velocity': velocity,
+            'momentum': rho * depth * velocity / 1000.,
+            }
+
+    if container == 'single':
+        return times, results[0]
+    if container == 'list':
+        return times, [results[key] for key in keys]
+    return times, results
+
+def _photofinish_axis(axis, span, grid, max_minor = 150, max_labels = 16):
+    """
+    Set up the major/minor grid of one axis of a photofinish plot.
+
+    The (major, minor) spacings of the reference are used as they are unless the
+    axis spans so much that they would produce an unreadable plot: minor lines are
+    then dropped and major labels are shown every nth line only (the major grid
+    lines themselves are kept).
+    """
+    from matplotlib.ticker import FuncFormatter, MultipleLocator
+
+    major, minor = grid
+    axis.set_major_locator(MultipleLocator(major))
+    if span / minor <= max_minor:
+        axis.set_minor_locator(MultipleLocator(minor))
+
+    label_every = max(1, int(np.ceil(span / major / max_labels)))
+    if label_every > 1:
+        axis.set_major_formatter(FuncFormatter(
+            lambda value, position: f'{value:g}' if round(value / major) % label_every == 0 else ''))
+
+def photofinish_plot(times, distances, values, cmap, norm, bounds = None,
+                     language = 'English', label = '', title = None, ylim = None,
+                     figsize = (12, 8), grid_x = (20, 5), grid_y = (100, 10)):
+    """
+    Photofinish plot: time on the x axis, distance along the profile on the y axis
+    (reversed, as in the Mathematica reference), value as discrete colours.
+
+    Input:
+        * times: array of shape (nt,)
+        * distances: curvilinear abscissa, array of shape (ns,)
+        * values: array of shape (nt, ns)
+        * cmap, norm, bounds: see photofinish_colormaps()
+        * language: 'French' or 'English'
+        * label: colorbar label
+        * title: optional axes title
+        * ylim: optional (s_min, s_max) to zoom on a stretch of the profile
+        * grid_x, grid_y: (major, minor) grid spacing, in s and m
+    Output:
+        * fig, ax
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize = figsize)
+
+    # Values outside the fgout domain come back as NaN: mask them so they are
+    # drawn with the transparent 'bad' colour instead of being clipped to a class.
+    field = np.ma.masked_invalid(np.asarray(values).T)  # (ns, nt) for pcolormesh
+    pc = ax.pcolormesh(times, distances, field, cmap = cmap, norm = norm, shading = 'nearest')
+
+    if ylim is not None:
+        ax.set_ylim(min(ylim), max(ylim))
+    ax.invert_yaxis()  # ScalingFunctions -> {Automatic, "Reverse"} in the reference
+
+    # Grids: major and minor, as in the reference (#aaaaaa and #dddddd, opacity 0.4).
+    # The reference transects were a few hundred metres long; on a profile of a few
+    # kilometres the minor lines would turn into a grey wash and the major labels
+    # would overlap, so both are thinned out when the axis span asks for it.
+    _photofinish_axis(ax.xaxis, abs(np.ptp(ax.get_xlim())), grid_x)
+    _photofinish_axis(ax.yaxis, abs(np.ptp(ax.get_ylim())), grid_y)
+    ax.grid(which = 'major', color = '#aaaaaa', alpha = 0.4, linewidth = 0.8)
+    ax.grid(which = 'minor', color = '#dddddd', alpha = 0.4, linewidth = 0.5)
+    ax.set_axisbelow(False)  # the grid stays readable over the coloured area
+
+    if language == 'French':
+        ax.set_xlabel(r"temps $t$ (s)")
+        ax.set_ylabel(r"distance le long du profil $s$ (m)")
+    else:
+        ax.set_xlabel(r"Time $t$ (s)")
+        ax.set_ylabel(r"Profile distance $s$ (m)")
+
+    if title is not None:
+        ax.set_title(title)
+
+    colorbar = fig.colorbar(pc, ax = ax, extend = 'max', shrink = 0.7,
+                            ticks = bounds if bounds is not None else None)
+    if label:
+        colorbar.set_label(label)
+
+    return fig, ax
+
 def extract_values(text):
-    """ 
+    """
     Goal: extracting the number and word from a string 
     Output: Boolean, number, word, remark
     The Boolean is True when extraction is successful, False otherwise.
